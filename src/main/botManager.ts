@@ -72,7 +72,7 @@ export class BotManager {
   }
 
   status(): BotStatus {
-    if (this.engine) return this.engine.status();
+    if (this.engine) return { ...this.engine.status(), mode: this.store.botConfig.mode };
     return {
       state: 'stopped',
       mode: this.store.botConfig.mode,
@@ -81,6 +81,11 @@ export class BotManager {
       stats: this.store.stats ?? emptyStats(),
       hedges: this.store.hedges,
     };
+  }
+
+  /** Tell the UI about a config change (e.g. practice ↔ live). */
+  notify() {
+    this.push.status(this.status());
   }
 
   getLogs() {

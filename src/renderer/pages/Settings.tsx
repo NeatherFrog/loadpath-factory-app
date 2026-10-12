@@ -13,6 +13,24 @@ export function Settings({ update, info }: { update: UpdateStatus; info: AppInfo
   const [ltIdx, setLtIdx] = useState('');
   const [ltKey, setLtKey] = useState('');
   const [msg, setMsg] = useState('');
+  const [mode, setModeState] = useState<'paper' | 'live'>('paper');
+  const [modeMsg, setModeMsg] = useState('');
+
+  useEffect(() => {
+    void api().getBotConfig().then((c) => setModeState(c.mode));
+  }, []);
+
+  const setMode = async (m: 'paper' | 'live') => {
+    setModeMsg('');
+    if (m === 'live' && !window.confirm('Включить настоящий режим? Сделки на Nado будут идти реальными деньгами.')) return;
+    try {
+      const c = await api().getBotConfig();
+      const saved = await api().setBotConfig({ ...c, mode: m });
+      setModeState(saved.mode);
+    } catch (e) {
+      setModeMsg(String(e instanceof Error ? e.message : e));
+    }
+  };
 
   useEffect(() => {
     void api().getCreds().then((c) => {
@@ -46,9 +64,18 @@ export function Settings({ update, info }: { update: UpdateStatus; info: AppInfo
     <div className="page">
       <header className="page-head"><h1>Настройки</h1></header>
 
+      <div className="card mode-card">
+        <h3>Режим</h3>
+        <div className="seg big-seg">
+          <button className={mode === 'paper' ? 'on' : ''} onClick={() => void setMode('paper')}>Тренировка (деньги не настоящие)</button>
+          <button className={mode === 'live' ? 'on danger' : ''} onClick={() => void setMode('live')}>По-настоящему</button>
+        </div>
+        {modeMsg && <p className="small bad">{modeMsg}</p>}
+      </div>
+
       <div className="grid cols-2 align-start">
         <div className="card">
-          <h3>Nado</h3>
+          <h3>Nado — нужна для зеркальных сделок</h3>
           <ol className="small steps">
             <li>Внеси USDT0 на <a onClick={() => void api().openExternal('https://app.nado.xyz')}>app.nado.xyz</a> (минимум $5, чтобы создался субаккаунт).</li>
             <li>Включи <b>1-Click Trading</b> или создай <b>linked signer</b> по <a onClick={() => void api().openExternal('https://docs.nado.xyz/developer-resources/get-started/linked-signers')}>инструкции</a>: это отдельный ключ, который можно отозвать.</li>
@@ -63,35 +90,41 @@ export function Settings({ update, info }: { update: UpdateStatus; info: AppInfo
           </div>
         </div>
 
-        <div className="card">
-          <h3>Hyperliquid (хедж)</h3>
-          <ol className="small steps">
-            <li>Внеси USDC на <a onClick={() => void api().openExternal('https://app.hyperliquid.xyz')}>app.hyperliquid.xyz</a>.</li>
-            <li>Создай <b>API Wallet</b> на странице <a onClick={() => void api().openExternal('https://app.hyperliquid.xyz/API')}>More → API</a>. Такой ключ может торговать, но не может выводить средства.</li>
-            <li>Вставь адрес основного аккаунта и приватный ключ API-кошелька.</li>
-          </ol>
-          <div className="form">
-            <label className="wide">Адрес основного аккаунта<input value={hlAddr} onChange={(e) => setHlAddr(e.target.value)} placeholder="0x…" /></label>
-            <label className="wide">Приватный ключ API-кошелька {creds?.hyperliquid.hasKey && <span className="ok">✓ сохранён</span>}
-              <input type="password" value={hlKey} onChange={(e) => setHlKey(e.target.value)} placeholder={creds?.hyperliquid.hasKey ? 'оставь пустым, чтобы не менять' : '0x…'} />
-            </label>
-          </div>
-        </div>
-        <div className="card">
-          <h3>Lighter (хедж с 0% комиссии)</h3>
-          <ol className="small steps">
-            <li>Внеси USDC на <a onClick={() => void api().openExternal('https://app.lighter.xyz')}>app.lighter.xyz</a>.</li>
-            <li>Создай API-ключ на странице <a onClick={() => void api().openExternal('https://app.lighter.xyz/apikeys')}>API Keys</a>. Скопируй Account Index, API Key Index и Private Key. Такой ключ может торговать, но не может вывести средства без подписи твоего кошелька.</li>
-          </ol>
-          <div className="form">
-            <label>Account Index<input value={ltAcc} onChange={(e) => setLtAcc(e.target.value)} placeholder="например 123456" /></label>
-            <label>API Key Index<input value={ltIdx} onChange={(e) => setLtIdx(e.target.value)} placeholder="2–254" /></label>
-            <label className="wide">API Private Key {creds?.lighter.hasKey && <span className="ok">✓ сохранён</span>}
-              <input type="password" value={ltKey} onChange={(e) => setLtKey(e.target.value)} placeholder={creds?.lighter.hasKey ? 'оставь пустым, чтобы не менять' : 'ключ Lighter'} />
-            </label>
-          </div>
-        </div>
       </div>
+
+      <details className="card">
+        <summary><b>Другие биржи (нужны только авто-боту)</b></summary>
+        <div className="grid cols-2 align-start">
+          <div className="card">
+            <h3>Hyperliquid (хедж)</h3>
+            <ol className="small steps">
+              <li>Внеси USDC на <a onClick={() => void api().openExternal('https://app.hyperliquid.xyz')}>app.hyperliquid.xyz</a>.</li>
+              <li>Создай <b>API Wallet</b> на странице <a onClick={() => void api().openExternal('https://app.hyperliquid.xyz/API')}>More → API</a>. Такой ключ может торговать, но не может выводить средства.</li>
+              <li>Вставь адрес основного аккаунта и приватный ключ API-кошелька.</li>
+            </ol>
+            <div className="form">
+              <label className="wide">Адрес основного аккаунта<input value={hlAddr} onChange={(e) => setHlAddr(e.target.value)} placeholder="0x…" /></label>
+              <label className="wide">Приватный ключ API-кошелька {creds?.hyperliquid.hasKey && <span className="ok">✓ сохранён</span>}
+                <input type="password" value={hlKey} onChange={(e) => setHlKey(e.target.value)} placeholder={creds?.hyperliquid.hasKey ? 'оставь пустым, чтобы не менять' : '0x…'} />
+              </label>
+            </div>
+          </div>
+          <div className="card">
+            <h3>Lighter (хедж с 0% комиссии)</h3>
+            <ol className="small steps">
+              <li>Внеси USDC на <a onClick={() => void api().openExternal('https://app.lighter.xyz')}>app.lighter.xyz</a>.</li>
+              <li>Создай API-ключ на странице <a onClick={() => void api().openExternal('https://app.lighter.xyz/apikeys')}>API Keys</a>. Скопируй Account Index, API Key Index и Private Key. Такой ключ может торговать, но не может вывести средства без подписи твоего кошелька.</li>
+            </ol>
+            <div className="form">
+              <label>Account Index<input value={ltAcc} onChange={(e) => setLtAcc(e.target.value)} placeholder="например 123456" /></label>
+              <label>API Key Index<input value={ltIdx} onChange={(e) => setLtIdx(e.target.value)} placeholder="2–254" /></label>
+              <label className="wide">API Private Key {creds?.lighter.hasKey && <span className="ok">✓ сохранён</span>}
+                <input type="password" value={ltKey} onChange={(e) => setLtKey(e.target.value)} placeholder={creds?.lighter.hasKey ? 'оставь пустым, чтобы не менять' : 'ключ Lighter'} />
+              </label>
+            </div>
+          </div>
+        </div>
+      </details>
       <div className="actions">
         <button className="btn primary" onClick={save}>Сохранить ключи</button>
         {msg && <span className="muted small">{msg}</span>}

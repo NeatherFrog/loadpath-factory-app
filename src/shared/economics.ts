@@ -93,3 +93,66 @@ export function omniHoldPlan(e: EconomicsInputs, notionalUsd: number, days: numb
   const net = pointsValue - entryExit + funding;
   return { points, pointsValue, entryExit, funding, net, costPerPoint: points > 0 ? (entryExit - funding) / points : null };
 }
+
+export interface HoldIdea {
+  coin: string;
+  /** Side to open on Variational Omni; Nado takes the opposite side. */
+  omniSide: 'long' | 'short';
+  /** Funding both legs earn together, per year (decimal). */
+  fundingApr: number;
+  fundingUsd: number;
+  points: number;
+  pointsUsd: number;
+  costUsd: number;
+  netUsd: number;
+  price: number;
+}
+
+interface QuoteLike {
+  fundingApr: number | null;
+  spreadBps: number;
+  volume24h: number | null;
+  mid: number;
+}
+
+/**
+ * Mirrored trades (long on one venue, short on the other) ranked by what they earn over `days`:
+ * funding paid to us on both legs + Variational points for holding the position − entry/exit cost.
+ */
+export function rankHoldIdeas(
+  rows: { coin: string; quotes: { variational?: QuoteLike; nado?: QuoteLike } }[],
+  e: EconomicsInputs,
+  notionalUsd: number,
+  days: number,
+): HoldIdea[] {
+  const out: HoldIdea[] = [];
+  for (const r of rows) {
+    const o = r.quotes.variational;
+    const n = r.quotes.nado;
+    if (!o || !n || o.fundingApr === null || n.fundingApr === null) continue;
+    // Omni TradFi swaps (stocks, indices) use a different financing model and report 0 here.
+    if (o.fundingApr === 0) continue;
+    // Liquidity guard: thin books make entry/exit and hedging unreliable.
+    if ((n.volume24h ?? 0) < 150_000 || o.spreadBps > 10 || n.spreadBps > 5) continue;
+    const fundingApr = Math.abs(o.fundingApr - n.fundingApr);
+    const p = omniHoldPlan({ ...e, variational: { ...e.variational, roundTripSpreadBps: o.spreadBps + n.spreadBps / 2 } }, notionalUsd, days, fundingApr);
+    out.push({
+      coin: r.coin,
+      omniSide: o.fundingApr < n.fundingApr ? 'long' : 'short',
+      fundingApr,
+      fundingUsd: p.funding,
+      points: p.points,
+      pointsUsd: p.pointsValue,
+      costUsd: p.entryExit,
+      netUsd: p.net,
+      price: n.mid,
+    });
+  }
+  return out.sort((a, b) => b.netUsd - a.netUsd);
+}
+
+/** What an open mirrored trade earns per day right now (negative = it costs money). */
+export function dailyIncome(notionalUsd: number, omniSide: 'long' | 'short', fOmni: number, fNado: number): number {
+  const apr = omniSide === 'long' ? fNado - fOmni : fOmni - fNado;
+  return (notionalUsd * apr) / 365;
+}

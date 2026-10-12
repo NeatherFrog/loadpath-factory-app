@@ -35,3 +35,30 @@ describe('economics', () => {
     expect(p.net).toBeGreaterThan(15);
   });
 });
+
+import { dailyIncome, rankHoldIdeas } from '../src/shared/economics';
+
+describe('mirrored trade ideas', () => {
+  const q = (fundingApr: number, spreadBps = 1, volume24h = 1e6, mid = 100) => ({ fundingApr, spreadBps, volume24h, mid });
+  it('picks the side where funding is paid to us and skips illiquid or TradFi markets', () => {
+    const ideas = rankHoldIdeas(
+      [
+        { coin: 'GOLD', quotes: { variational: q(-0.1), nado: q(0.1) } }, // long Omni, short Nado: +20%/yr
+        { coin: 'BTC', quotes: { variational: q(0.1), nado: q(0.02) } }, // short Omni: +8%/yr
+        { coin: 'THIN', quotes: { variational: q(-0.5), nado: q(0.5, 1, 1000) } }, // no volume on Nado
+        { coin: 'SPY', quotes: { variational: q(0), nado: q(0.3) } }, // Omni TradFi swap
+      ],
+      E,
+      10_000,
+      7,
+    );
+    expect(ideas.map((i) => i.coin)).toEqual(['GOLD', 'BTC']);
+    expect(ideas[0].omniSide).toBe('long');
+    expect(ideas[1].omniSide).toBe('short');
+    expect(ideas[0].fundingApr).toBeCloseTo(0.2);
+  });
+  it('daily income of an open mirrored trade', () => {
+    expect(dailyIncome(3650, 'long', -0.1, 0.1)).toBeCloseTo(2, 5);
+    expect(dailyIncome(3650, 'short', -0.1, 0.1)).toBeCloseTo(-2, 5);
+  });
+});

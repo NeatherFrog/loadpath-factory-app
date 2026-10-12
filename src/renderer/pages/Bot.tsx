@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_BOT_CONFIG, type BotConfig, type BotLogEntry, type BotStatus, type BotVenueId } from '../../shared/types';
 import { api, usd } from '../api';
-import { Stat, stateLabel } from './Overview';
+import { Stat, stateLabel } from '../components';
 
 const VENUE_LABEL: Record<BotVenueId, string> = { nado: 'Nado', hyperliquid: 'Hyperliquid', lighter: 'Lighter' };
 // Entry-tier fees, used for the cost estimate only.

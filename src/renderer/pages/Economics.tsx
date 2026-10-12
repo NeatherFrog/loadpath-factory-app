@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { BotStatus, MarketSnapshot, ResearchFeed } from '../../shared/types';
-import { compareStrategies, omniHoldPlan, type EconomicsInputs } from '../../shared/economics';
+import { compareStrategies, omniHoldPlan, rankHoldIdeas, type EconomicsInputs } from '../../shared/economics';
 import { api, pct, usd } from '../api';
 import { Num } from './Bot';
 
@@ -43,26 +43,17 @@ export function Economics({ feed, bot }: { feed: ResearchFeed | null; bot: BotSt
   const spreadRt = row?.quotes.variational?.spreadBps ?? e.variational.roundTripSpreadBps;
   const plan = omniHoldPlan({ ...e, variational: { ...e.variational, roundTripSpreadBps: spreadRt } }, notional, days, edge);
 
-  // Best coins to hold delta-neutral (Omni vs Nado): funding paid to us on both legs + VAR points for OI.
-  const holdRanking = useMemo(() => {
-    if (!snap) return [];
-    return snap.rows
-      .map((r) => {
-        const o = r.quotes.variational;
-        const n = r.quotes.nado;
-        if (!o || !n || o.fundingApr === null || n.fundingApr === null) return null;
-        // Omni TradFi swaps (stocks, indices, metals) use a different financing model and report 0 here.
-        if (o.fundingApr === 0) return null;
-        // Liquidity guard: thin books make entry/exit and hedging unreliable.
-        if ((n.volume24h ?? 0) < 150_000 || o.spreadBps > 10 || n.spreadBps > 5) return null;
-        const fEdge = Math.abs(o.fundingApr - n.fundingApr);
-        const p = omniHoldPlan({ ...e, variational: { ...e.variational, roundTripSpreadBps: o.spreadBps + n.spreadBps / 2 } }, notional, days, fEdge);
-        return { coin: r.coin, side: o.fundingApr < n.fundingApr ? 'LONG' : 'SHORT', fOmni: o.fundingApr, fNado: n.fundingApr, edge: fEdge, net: p.net, funding: p.funding, points: p.pointsValue, cost: p.entryExit };
-      })
-      .filter((x): x is NonNullable<typeof x> => !!x)
-      .sort((a, b) => b.net - a.net)
-      .slice(0, 10);
-  }, [snap, e, notional, days]);
+  const holdRanking = useMemo(
+    () =>
+      snap
+        ? rankHoldIdeas(snap.rows, e, notional, days).slice(0, 10).map((h) => ({
+            coin: h.coin, side: h.omniSide.toUpperCase(), edge: h.fundingApr, net: h.netUsd, funding: h.fundingUsd, points: h.pointsUsd, cost: h.costUsd,
+            fOmni: snap.rows.find((r) => r.coin === h.coin)?.quotes.variational?.fundingApr ?? null,
+            fNado: snap.rows.find((r) => r.coin === h.coin)?.quotes.nado?.fundingApr ?? null,
+          }))
+        : [],
+    [snap, e, notional, days],
+  );
 
   // Actual bot numbers: cost per $1M of Nado volume and the implied cost of one Nado point.
   const s = bot?.stats;

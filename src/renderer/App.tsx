@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { AppInfo, BotStatus, ResearchFeed, UpdateStatus } from '../shared/types';
 import { api } from './api';
-import { Overview } from './pages/Overview';
+import { Home } from './pages/Home';
+import { MyPoints } from './pages/MyPoints';
 import { Research } from './pages/Research';
 import { Markets } from './pages/Markets';
 import { Bot } from './pages/Bot';
@@ -9,20 +10,26 @@ import { Points } from './pages/Points';
 import { Settings } from './pages/Settings';
 import { Economics } from './pages/Economics';
 
-export type Page = 'overview' | 'research' | 'markets' | 'bot' | 'economics' | 'points' | 'settings';
+export type Page = 'home' | 'mypoints' | 'research' | 'markets' | 'bot' | 'economics' | 'points' | 'settings';
 
 const NAV: { id: Page; label: string; icon: string }[] = [
-  { id: 'overview', label: 'Обзор', icon: '◎' },
-  { id: 'research', label: 'Исследование', icon: '⌕' },
-  { id: 'markets', label: 'Рынки', icon: '≋' },
-  { id: 'bot', label: 'Бот (дельта-нейтрал)', icon: '⇄' },
-  { id: 'economics', label: 'Экономика фарма', icon: '$' },
-  { id: 'points', label: 'Поинты & OTC', icon: '◈' },
+  { id: 'home', label: 'Главная', icon: '★' },
+  { id: 'mypoints', label: 'Мои поинты', icon: '◈' },
   { id: 'settings', label: 'Настройки', icon: '⚙' },
 ];
 
+// Detailed tools for later; hidden behind "Ещё" so the main screen stays simple.
+const MORE: { id: Page; label: string; icon: string }[] = [
+  { id: 'research', label: 'Разбор проектов', icon: '⌕' },
+  { id: 'markets', label: 'Все рынки', icon: '≋' },
+  { id: 'bot', label: 'Авто-бот', icon: '⇄' },
+  { id: 'economics', label: 'Расчёты', icon: '$' },
+  { id: 'points', label: 'Поинты и OTC подробно', icon: '◇' },
+];
+
 export function App() {
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPage] = useState<Page>('home');
+  const [showMore, setShowMore] = useState(false);
   const [feed, setFeed] = useState<ResearchFeed | null>(null);
   const [feedSource, setFeedSource] = useState<string>('');
   const [feedError, setFeedError] = useState('');
@@ -75,6 +82,18 @@ export function App() {
               {n.id === 'bot' && running && <span className="pulse" title="Бот работает" />}
             </button>
           ))}
+          <button className="nav-item more-toggle" onClick={() => setShowMore(!showMore)}>
+            <span className="nav-icon">{showMore ? '▾' : '▸'}</span>
+            Ещё (для продвинутых)
+          </button>
+          {showMore &&
+            MORE.map((n) => (
+              <button key={n.id} className={`nav-item sub ${page === n.id ? 'active' : ''}`} onClick={() => setPage(n.id)}>
+                <span className="nav-icon">{n.icon}</span>
+                {n.label}
+                {n.id === 'bot' && running && <span className="pulse" title="Бот работает" />}
+              </button>
+            ))}
         </nav>
         <div className="sidebar-foot">
           <UpdateBadge s={update} />
@@ -86,7 +105,8 @@ export function App() {
       </aside>
       <main className="content">
         {feedError && <div className="banner error">Не удалось загрузить исследование: {feedError}</div>}
-        {page === 'overview' && <Overview feed={feed} bot={bot} go={setPage} />}
+        {page === 'home' && <Home feed={feed} bot={bot} go={setPage} />}
+        {page === 'mypoints' && <MyPoints feed={feed} />}
         {page === 'research' && <Research feed={feed} onRefresh={() => loadFeed(true)} />}
         {page === 'markets' && <Markets />}
         {page === 'bot' && <Bot status={bot} />}

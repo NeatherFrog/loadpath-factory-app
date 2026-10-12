@@ -213,8 +213,10 @@ describe('DeltaNeutralEngine', () => {
     const b = new FakeVenue('hyperliquid', 'B');
     const c = new MakerVenue('lighter', 'C');
     c.makerFillFrac = [0.5, ...new Array(1_000).fill(0)]; // maker fills half, then stalls
+    let clock = 0; // fake time: each sleep advances it, so the 1-minute maker budget runs instantly
     const engine = new DeltaNeutralEngine(a, b, cfg, {
-      sleep: () => new Promise((r) => setImmediate(r)),
+      sleep: (ms) => { clock += ms; return new Promise((r) => setImmediate(r)); },
+      now: () => clock,
       resolveVenue: () => c,
     });
     const h = await engine.openManualHedge('ETH', 'long', 2, 'lighter', true);

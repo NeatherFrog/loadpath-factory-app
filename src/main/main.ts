@@ -107,6 +107,7 @@ function registerIpc() {
         throw new Error('Останови бота перед сменой режима или бирж');
       }
       realStore.setBotConfig(c);
+      bot.notify();
       return realStore.botConfig;
     }),
   );

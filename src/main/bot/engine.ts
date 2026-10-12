@@ -451,8 +451,11 @@ export class DeltaNeutralEngine {
     reduceOnly: boolean,
     onFill: (delta: number, px: number) => Promise<void>,
     track: (v: Venue, q: number, f: Fill) => void,
+    budget?: { waitSec: number; requotes: number },
   ): Promise<number> {
     const spec = venue.spec(coin);
+    const waitSec = budget?.waitSec ?? this.config.makerWaitSec;
+    const requotes = budget?.requotes ?? this.config.makerRequotes ?? 3;
     const sign = Math.sign(target);
     const want = Math.abs(target);
     const start = await this.retry(() => venue.position(coin), `${venue.label}: позиция`);
@@ -469,7 +472,7 @@ export class DeltaNeutralEngine {
       }
     };
 
-    for (let q = 0; q < Math.max(1, this.config.makerRequotes ?? 3) && want - reported >= spec.sizeStep && !this.stopRequested; q++) {
+    for (let q = 0; q < Math.max(1, requotes) && want - reported >= spec.sizeStep && !this.stopRequested; q++) {
       const book = await this.retry(() => venue.book(coin), `${venue.label}: стакан`);
       const px = sign > 0 ? book.bid : book.ask;
       let id: string | null = null;
@@ -484,7 +487,7 @@ export class DeltaNeutralEngine {
         continue;
       }
       if (!id) continue; // book moved and the order would have crossed: re-quote
-      const deadline = this.now() + this.config.makerWaitSec * 1000;
+      const deadline = this.now() + waitSec * 1000;
       while (this.now() < deadline && !this.stopRequested) {
         await this.sleep(MAKER_POLL_MS, () => this.stopRequested);
         await report(px);
@@ -613,7 +616,8 @@ export class DeltaNeutralEngine {
     let filled = 0;
     if (maker && venue.postOnly && venue.cancel) {
       // Maker first (cheap); whatever did not fill within the wait is completed as taker.
-      filled = await this.makerFill(venue, coin, target, false, async () => {}, track);
+      // Keep a person waiting at most ~1 minute; the rest is filled as taker.
+      filled = await this.makerFill(venue, coin, target, false, async () => {}, track, { waitSec: 20, requotes: 3 });
     }
     const rest = Math.abs(target) - filled;
     if (rest >= venue.spec(coin).sizeStep) filled += await this.fillWithRetries(venue, coin, Math.sign(target) * rest, false, track);

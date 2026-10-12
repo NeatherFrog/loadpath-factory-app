@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { Project, ResearchFeed, ScoreBreakdown } from '../../shared/types';
 import { projectScore, rankProjects, SCORE_LABELS, SCORE_WEIGHTS } from '../../shared/scoring';
 import { api } from '../api';
-import { StatusPill } from './Overview';
+import { StatusPill } from '../components';
 
 export function Research({ feed, onRefresh }: { feed: ResearchFeed | null; onRefresh: () => void }) {
   const [openId, setOpenId] = useState<string | null>('variational');
