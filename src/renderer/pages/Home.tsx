@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { AutopilotCard } from './AutopilotCard';
 import type { BotStatus, ManualHedge, MarketSnapshot, ResearchFeed, VenueCredentialsView } from '../../shared/types';
 import { dailyIncome, rankHoldIdeas, type EconomicsInputs, type HoldIdea } from '../../shared/economics';
 import { api, usd } from '../api';
@@ -33,7 +34,7 @@ const FALLBACK: EconomicsInputs = {
 
 type Step = 'idle' | 'nado' | 'omni' | 'done' | 'close-omni' | 'close-nado';
 
-export function Home({ feed, bot, go }: { feed: ResearchFeed | null; bot: BotStatus | null; go: (p: Page) => void }) {
+export function VariationalManual({ feed, bot, go }: { feed: ResearchFeed | null; bot: BotStatus | null; go: (p: Page) => void }) {
   const [snap, setSnap] = useState<MarketSnapshot | null>(null);
   const [creds, setCreds] = useState<VenueCredentialsView | null>(null);
   const [amount, setAmount] = useState(1000);
@@ -94,21 +95,7 @@ export function Home({ feed, bot, go }: { feed: ResearchFeed | null; bot: BotSta
   const quoteFor = (coin: string) => snap?.rows.find((r) => r.coin === coin)?.quotes;
 
   return (
-    <div className="page home">
-      <header className="page-head">
-        <h1>Что делать сегодня</h1>
-        <p className="muted">
-          Одна простая стратегия: <b>зеркальная сделка</b>. На Variational покупаешь, на Nado продаёшь ту же монету на ту же сумму
-          (или наоборот).
-        </p>
-      </header>
-
-      {paper && (
-        <div className="banner warn">
-          Сейчас режим <b>тренировки</b>: сделки на Nado не настоящие. Когда разберёшься, включи «По-настоящему» в{' '}
-          <a onClick={() => go('settings')}>Настройках</a>.
-        </div>
-      )}
+    <div className="manual">
       {!ready && (
         <div className="banner error">
           Чтобы приложение само открывало сделку на Nado, подключи Nado в <a onClick={() => go('settings')}>Настройках</a> (2 минуты).
@@ -257,7 +244,7 @@ export function Home({ feed, bot, go }: { feed: ResearchFeed | null; bot: BotSta
       {err && <div className="banner error">{err}</div>}
 
       <div className="card">
-        <h3>Мои сделки</h3>
+        <h3>Мои ручные сделки</h3>
         {deals.length === 0 && <p className="muted">Пока нет открытых сделок.</p>}
         {deals.map((d) => {
           const q = quoteFor(d.coin);
@@ -287,6 +274,34 @@ export function Home({ feed, bot, go }: { feed: ResearchFeed | null; bot: BotSta
           );
         })}
       </div>
+    </div>
+  );
+}
+
+export function Home({ feed, bot, go }: { feed: ResearchFeed | null; bot: BotStatus | null; go: (p: Page) => void }) {
+  return (
+    <div className="page home">
+      <header className="page-head">
+        <h1>Главная</h1>
+        <p className="muted">Нажми «Запустить» — дальше приложение торгует само.</p>
+      </header>
+      {bot?.mode !== 'live' && (
+        <div className="banner warn">
+          Режим <b>тренировки</b>: деньги не настоящие. Когда посмотришь, как работает, включи «По-настоящему» в{' '}
+          <a onClick={() => go('settings')}>Настройках</a>.
+        </div>
+      )}
+      <AutopilotCard bot={bot} go={go} />
+      <details className="card">
+        <summary>
+          <b>Variational — самые ценные поинты (только руками)</b>
+          <div className="small muted">
+            Правила Variational запрещают ботов: за автоматическую торговлю там могут обнулить поинты. Поэтому сделку там открываешь сам,
+            один раз на неделю-две, а приложение подсказывает, что нажать, и само ставит вторую половину на Nado.
+          </div>
+        </summary>
+        <VariationalManual feed={feed} bot={bot} go={go} />
+      </details>
     </div>
   );
 }

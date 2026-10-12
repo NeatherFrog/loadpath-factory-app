@@ -2,7 +2,10 @@ import { app, safeStorage } from 'electron';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  DEFAULT_AUTOPILOT_CONFIG,
   DEFAULT_BOT_CONFIG,
+  type AutopilotConfig,
+  type AutopilotStatus,
   type BotConfig,
   type BotStats,
   type CredentialsInput,
@@ -25,6 +28,11 @@ interface StoreData {
   hedges: ManualHedge[];
   points: PointsEntry[];
   creds: StoredCreds;
+  autopilotConfig?: AutopilotConfig;
+  /** The user turned the autopilot on (and did not turn it off): resume it on app start. */
+  autopilotEnabled?: boolean;
+  /** Kept per mode so a practice position is never "restored" into live trading. */
+  autopilotState?: Partial<Record<BotConfig['mode'], AutopilotStatus>>;
 }
 
 const DEFAULTS: StoreData = {
@@ -112,6 +120,28 @@ export class Store {
   saveBotState(stats: BotStats, hedges: ManualHedge[]) {
     this.data.stats = stats;
     this.data.hedges = hedges;
+    this.write();
+  }
+
+  get autopilotConfig(): AutopilotConfig {
+    return { ...DEFAULT_AUTOPILOT_CONFIG, ...this.data.autopilotConfig };
+  }
+  setAutopilotConfig(c: AutopilotConfig) {
+    this.data.autopilotConfig = { ...DEFAULT_AUTOPILOT_CONFIG, ...c };
+    this.write();
+  }
+  get autopilotEnabled() {
+    return !!this.data.autopilotEnabled;
+  }
+  setAutopilotEnabled(on: boolean) {
+    this.data.autopilotEnabled = on;
+    this.write();
+  }
+  autopilotState(mode: BotConfig['mode']): AutopilotStatus | undefined {
+    return this.data.autopilotState?.[mode];
+  }
+  saveAutopilotState(mode: BotConfig['mode'], s: AutopilotStatus) {
+    this.data.autopilotState = { ...this.data.autopilotState, [mode]: s };
     this.write();
   }
 

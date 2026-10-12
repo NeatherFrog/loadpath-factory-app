@@ -205,3 +205,14 @@ details.others summary, details.card summary { cursor: pointer; color: var(--mut
 .nav-item.sub { font-size: 13px; padding-left: 22px; }
 .mode-card .big-seg button { padding: 10px 18px; font-size: 14px; }
 .card.hero > .btn { align-self: flex-start; }
+.ap-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ap-box { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.ap-big { font-size: 20px; font-weight: 700; margin: 4px 0; }
+.ap-events { list-style: none; padding: 0; margin: 6px 0 0; font-size: 13px; line-height: 1.7; }
+.ap-events li.trade { color: #9fd8ff; }
+.ap-events li.warn { color: var(--warn); }
+.ap-events li.error { color: var(--bad); }
+details.card > summary { list-style: none; }
+details.card > summary b { color: var(--text); }
+.manual { margin-top: 14px; display: flex; flex-direction: column; gap: 14px; }
+@media (max-width: 1100px) { .ap-grid { grid-template-columns: 1fr; } }

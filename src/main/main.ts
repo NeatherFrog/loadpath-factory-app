@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, powerSaveBlocker, shell } from 'electron';
 import log from 'electron-log/main';
 import { join } from 'node:path';
-import type { AppInfo, BotConfig, BotVenueId, CredentialsInput, PointsEntry, UpdateStatus } from '../shared/types';
+import type { AppInfo, AutopilotConfig, BotConfig, BotVenueId, CredentialsInput, PointsEntry, UpdateStatus } from '../shared/types';
 import { Store } from './store';
 import { loadFeed, type LoadedFeed } from './feed';
 import { fetchMarketSnapshot } from './markets';
@@ -50,20 +50,20 @@ function createWindow() {
     }
   });
   win.on('close', (e) => {
-    if (!bot.isRunning()) return;
+    if (!bot.isRunning() && !bot.autopilotStatus()?.running) return;
     const choice = dialog.showMessageBoxSync(win!, {
       type: 'warning',
       buttons: ['Остановить бота и выйти', 'Отмена'],
       defaultId: 1,
-      message: 'Бот работает',
-      detail: 'При выходе текущий цикл будет закрыт (обе ноги).',
+      message: 'Бот или автопилот работает',
+      detail: 'При выходе бот закроет текущий цикл. Позиция автопилота останется открытой и продолжит приносить фандинг; автопилот продолжит работу при следующем запуске.',
     });
     if (choice === 1) {
       e.preventDefault();
       return;
     }
     e.preventDefault();
-    void bot.stop().finally(() => {
+    void Promise.all([bot.stop(), bot.stopAutopilot(false, false)]).finally(() => {
       win?.destroy();
     });
   });
@@ -134,8 +134,21 @@ function registerIpc() {
   ipcMain.handle('bot:hedge:close', (_e, id: string) => wrap(() => bot.closeHedge(id)));
 
   ipcMain.handle('creds:get', () => wrap(() => realStore.credentialsView()));
+  ipcMain.handle('autopilot:status', () => wrap(() => bot.autopilotStatus()));
+  ipcMain.handle('autopilot:start', () =>
+    wrap(async () => {
+      const s = await bot.startAutopilot();
+      if (blockerId === null) blockerId = powerSaveBlocker.start('prevent-app-suspension');
+      return s;
+    }),
+  );
+  ipcMain.handle('autopilot:stop', (_e, closePosition: boolean) => wrap(() => bot.stopAutopilot(closePosition)));
+  ipcMain.handle('autopilot:config:get', () => wrap(() => realStore.autopilotConfig));
+  ipcMain.handle('autopilot:config:set', (_e, c: AutopilotConfig) => wrap(() => bot.setAutopilotConfig(c)));
+
   ipcMain.handle('creds:set', (_e, input: CredentialsInput) =>
     wrap(() => {
+      bot.resetVenues();
       realStore.setCredentials(input);
       return realStore.credentialsView();
     }),
@@ -176,9 +189,11 @@ if (!app.requestSingleInstanceLock()) {
     bot = new BotManager(realStore, {
       status: (s) => send('bot:status', s),
       log: (e) => send('bot:log', e),
+      autopilot: (s) => send('autopilot:status', s),
     });
     registerIpc();
     createWindow();
+    void bot.resumeAutopilotIfEnabled();
     updater = setupUpdater((s: UpdateStatus) => send('update:status', s));
   });
 

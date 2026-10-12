@@ -1,4 +1,6 @@
-import type { BotConfig, BotLogEntry, BotStatus, BotVenueId } from '../shared/types';
+import type { AutopilotConfig, AutopilotStatus, BotConfig, BotLogEntry, BotStatus, BotVenueId } from '../shared/types';
+import { Autopilot } from './bot/autopilot';
+import { fetchFundingQuotes } from './data/fundingQuotes';
 import { DeltaNeutralEngine, emptyStats } from './bot/engine';
 import type { Venue } from './bot/venue';
 import { PaperVenue } from './bot/venues/paper';
@@ -16,12 +18,36 @@ export class BotManager {
   private logs: BotLogEntry[] = [];
   private saveTimer: NodeJS.Timeout | null = null;
 
+  private venues = new Map<string, Venue>();
+  private autopilot: Autopilot | null = null;
+  private autopilotKey = '';
+  private apSaveTimer: NodeJS.Timeout | null = null;
+
   constructor(
     private store: Store,
-    private push: { status: (s: BotStatus) => void; log: (e: BotLogEntry) => void },
+    private push: { status: (s: BotStatus) => void; log: (e: BotLogEntry) => void; autopilot?: (s: AutopilotStatus) => void },
   ) {}
 
+  /** One venue instance per (mode, exchange), shared by the bot and the autopilot. */
   private makeVenue(id: BotVenueId, mode: BotConfig['mode']): Venue {
+    const key = `${mode}:${id}`;
+    let v = this.venues.get(key);
+    if (!v) {
+      v = this.createVenue(id, mode);
+      this.venues.set(key, v);
+    }
+    return v;
+  }
+
+  /** New API keys take effect on the next start. */
+  resetVenues() {
+    if (this.isRunning() || this.autopilot?.status().running) throw new Error('Останови бота и автопилот перед сменой ключей');
+    this.venues.clear();
+    this.engine = null;
+    this.autopilot = null;
+  }
+
+  private createVenue(id: BotVenueId, mode: BotConfig['mode']): Venue {
     if (mode === 'paper') {
       if (id === 'nado') return new PaperVenue('nado', 'Nado (paper)', nadoPublicSource());
       if (id === 'lighter') return new PaperVenue('lighter', 'Lighter (paper)', lighterPublicSource());
@@ -124,6 +150,108 @@ export class BotManager {
     const engine = this.ensureEngine();
     await engine.closeManualHedge(id);
     return engine.status();
+  }
+
+  // ---------- autopilot ----------
+
+  private hedgeId(): BotVenueId {
+    const b = this.store.botConfig.legB;
+    return b === 'nado' ? 'lighter' : b;
+  }
+
+  private ensureAutopilot(): Autopilot {
+    const cfg = this.store.botConfig;
+    const hedge = this.hedgeId();
+    const key = `${cfg.mode}:${hedge}`;
+    if (this.autopilot && this.autopilotKey === key) {
+      this.autopilot.updateConfig(this.store.autopilotConfig);
+      return this.autopilot;
+    }
+    if (this.autopilot?.status().running) throw new Error('Останови автопилот перед сменой режима');
+    const mode = cfg.mode;
+    const nado = this.makeVenue('nado', mode);
+    const hedgeVenue = this.makeVenue(hedge, mode);
+    const holder = new DeltaNeutralEngine(nado, hedgeVenue, { ...cfg, legA: 'nado', legB: hedge }, {
+      log: (e) => this.addLog(e),
+      resolveVenue: (id) => this.makeVenue(id, mode),
+    });
+    this.autopilot = new Autopilot(this.store.autopilotConfig, {
+      nado,
+      hedge: hedgeVenue,
+      holder,
+      quotes: () => fetchFundingQuotes(hedge),
+      churnBudget: (usd, exclude) => this.churnBudget(usd, exclude),
+      initial: this.store.autopilotState(mode),
+      onChange: (s) => {
+        this.push.autopilot?.(s);
+        if (this.apSaveTimer) return;
+        this.apSaveTimer = setTimeout(() => {
+          this.apSaveTimer = null;
+          this.store.saveAutopilotState(mode, s);
+        }, 1000);
+      },
+    });
+    this.autopilotKey = key;
+    return this.autopilot;
+  }
+
+  /**
+   * The churn engine (extra Nado volume for points) may lose at most `usd` today — funding the
+   * autopilot earned plus the user's daily budget. 0 stops it.
+   */
+  private async churnBudget(usd: number, exclude: string | null) {
+    const cfg = this.store.botConfig;
+    if (cfg.legA !== 'nado') return;
+    const engine = this.ensureEngine();
+    const coins = cfg.coins.filter((c) => c !== exclude);
+    const running = ['running', 'starting', 'stopping'].includes(engine.status().state);
+    if (usd < 0.05 || coins.length === 0) {
+      if (running) void engine.stop();
+      return;
+    }
+    engine.updateConfig({ ...cfg, coins, maxDailyLossUsd: usd, dailyVolumeTargetUsd: 0 });
+    const spent = -engine.status().stats.realizedPnlTodayUsd;
+    if (!running && spent < usd - 0.05) void engine.start();
+  }
+
+  autopilotStatus(): AutopilotStatus | null {
+    try {
+      return this.ensureAutopilot().status();
+    } catch {
+      return null;
+    }
+  }
+
+  async startAutopilot() {
+    const ap = this.ensureAutopilot();
+    this.store.setAutopilotEnabled(true);
+    await ap.start();
+    return ap.status();
+  }
+
+  /** `byUser`: the user pressed stop (don't resume on next launch); false when the app is quitting. */
+  async stopAutopilot(closePosition: boolean, byUser = true) {
+    if (byUser) this.store.setAutopilotEnabled(false);
+    if (!this.autopilot) return null;
+    await this.autopilot.stop(closePosition);
+    if (this.engine && ['running', 'starting'].includes(this.engine.status().state)) await this.engine.stop();
+    return this.autopilot.status();
+  }
+
+  async resumeAutopilotIfEnabled() {
+    if (!this.store.autopilotEnabled) return;
+    try {
+      await this.startAutopilot();
+      this.addLog({ ts: Date.now(), level: 'info', msg: 'Автопилот продолжил работу после перезапуска' });
+    } catch (err) {
+      this.addLog({ ts: Date.now(), level: 'error', msg: `Не удалось возобновить автопилот: ${err instanceof Error ? err.message : err}` });
+    }
+  }
+
+  setAutopilotConfig(c: AutopilotConfig) {
+    this.store.setAutopilotConfig(c);
+    this.autopilot?.updateConfig(this.store.autopilotConfig);
+    return this.store.autopilotConfig;
   }
 
   resetStats() {

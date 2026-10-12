@@ -1,5 +1,7 @@
 import type {
   AppInfo,
+  AutopilotConfig,
+  AutopilotStatus,
   BotConfig,
   BotLogEntry,
   BotStatus,
@@ -36,6 +38,12 @@ export interface Api {
   checkUpdates(): Promise<void>;
   installUpdate(): Promise<void>;
   openExternal(url: string): Promise<void>;
+  autopilotStatus(): Promise<AutopilotStatus | null>;
+  startAutopilot(): Promise<AutopilotStatus>;
+  stopAutopilot(closePosition: boolean): Promise<AutopilotStatus | null>;
+  getAutopilotConfig(): Promise<AutopilotConfig>;
+  setAutopilotConfig(c: AutopilotConfig): Promise<AutopilotConfig>;
+  onAutopilot(cb: (s: AutopilotStatus) => void): () => void;
   onBotStatus(cb: (s: BotStatus) => void): () => void;
   onBotLog(cb: (e: BotLogEntry) => void): () => void;
   onUpdateStatus(cb: (s: UpdateStatus) => void): () => void;

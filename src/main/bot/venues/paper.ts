@@ -18,6 +18,7 @@ export class PaperVenue implements Venue {
   private positions = new Map<string, number>();
   private cash = 0;
   private resting = new Map<string, { coin: string; size: number; price: number }>();
+  private lastPx = new Map<string, number>();
   private seq = 0;
 
   constructor(
@@ -67,6 +68,7 @@ export class PaperVenue implements Venue {
       this.resting.delete(id);
       const cur = this.positions.get(coin) ?? 0;
       this.positions.set(coin, Number((cur + o.size).toFixed(10)));
+      this.lastPx.set(coin, o.price);
       this.cash -= o.size * o.price + Math.abs(o.size) * o.price * (spec.makerFeeBps / 10_000);
     }
   }
@@ -84,8 +86,11 @@ export class PaperVenue implements Venue {
     this.resting.delete(orderId);
   }
 
+  /** Cash plus open positions marked at their last trade price. */
   async equityUsd() {
-    return this.cash;
+    let eq = this.cash;
+    for (const [coin, pos] of this.positions) eq += pos * (this.lastPx.get(coin) ?? 0);
+    return eq;
   }
 
   fundingApr(coin: string) {
@@ -104,6 +109,7 @@ export class PaperVenue implements Venue {
     const px = qty > 0 ? b.ask : b.bid;
     const feeUsd = Math.abs(qty) * px * (spec.takerFeeBps / 10_000);
     this.positions.set(coin, Number((current + qty).toFixed(10)));
+    this.lastPx.set(coin, px);
     this.cash -= qty * px + feeUsd;
     return { filledSize: Math.abs(qty), avgPx: px, feeUsd };
   }

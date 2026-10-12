@@ -259,3 +259,63 @@ export interface NadoPointsSummary {
   myPoints: number | null;
   epochs: { epoch: number; description: string; start: number; total: number; mine: number }[];
 }
+
+// ---- Autopilot ----
+
+export interface AutopilotConfig {
+  /** Position size = min(margin on both venues) × leverage × 0.9. */
+  leverage: number;
+  /** Extra USD per day the user allows to spend on Nado volume for points (on top of funding earned). */
+  dailyBudgetUsd: number;
+  /** Spend funding (+ budget) on extra Nado volume. */
+  churn: boolean;
+  /** Minimum funding the mirrored position must earn per year to open it. */
+  minEdgeApr: number;
+  /** Switch coins only when the new one pays this much more per year. */
+  switchExtraApr: number;
+  minHoldHours: number;
+  /** Positions are built and reduced in slices of this size. */
+  sliceUsd: number;
+  /** Hard cap on the position size (0 = no cap). */
+  maxNotionalUsd: number;
+}
+
+export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
+  leverage: 2,
+  dailyBudgetUsd: 0,
+  churn: true,
+  minEdgeApr: 0.05,
+  switchExtraApr: 0.1,
+  minHoldHours: 8,
+  sliceUsd: 500,
+  maxNotionalUsd: 0,
+};
+
+export interface AutopilotHold {
+  coin: string;
+  nadoSide: 'long' | 'short';
+  openedAt: number;
+  /** Positions that existed before the autopilot (never touched). */
+  baseA: number;
+  baseB: number;
+}
+
+export interface AutopilotEvent {
+  ts: number;
+  text: string;
+  kind: 'info' | 'trade' | 'warn' | 'error';
+}
+
+export interface AutopilotStatus {
+  running: boolean;
+  message: string;
+  hold: AutopilotHold | null;
+  notionalUsd: number;
+  /** Funding the open position earns per year (decimal). */
+  incomeApr: number;
+  fundingTotalUsd: number;
+  fundingTodayUsd: number;
+  day: string;
+  equity: { nado: number; hedge: number } | null;
+  events: AutopilotEvent[];
+}

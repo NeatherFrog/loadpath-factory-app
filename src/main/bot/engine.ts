@@ -352,41 +352,15 @@ export class DeltaNeutralEngine {
     };
 
     const useMaker = cfg.makerLegA && !!this.a.postOnly && !!this.a.cancel;
-    let filledA = 0;
-    let hedged = 0;
-    let entryPx = 0;
     if (useMaker) {
-      // Leg A rests post-only at the top of its book; every fill is hedged on B right away.
       this.message = `Мейкер-ордер ${coin} на ${this.a.label}…`;
       this.emit();
-      filledA = await this.makerFill(this.a, coin, dir * size, false, async (delta, px) => {
-        entryPx = px;
-        hedged += await this.fillWithRetries(this.b, coin, -dir * delta, false, track);
-      }, track);
-      if (filledA === 0) {
-        this.log('info', `${coin}: мейкер-ордер не исполнился за ${cfg.makerWaitSec * cfg.makerRequotes} c, пропускаю цикл`);
-        this.cycle.phase = 'failed';
-        return 'skipped';
-      }
-    } else {
-      // Leg A (farm venue) first, then hedge exactly what was filled on leg B.
-      const fillA = await this.a.ioc(coin, dir * size, cfg.slippageBps);
-      track(this.a, dir * fillA.filledSize, fillA);
-      filledA = fillA.filledSize;
-      entryPx = fillA.avgPx;
-      if (filledA === 0) {
-        this.log('warn', `${this.a.label}: IOC не исполнился, пропускаю цикл`);
-        this.cycle.phase = 'failed';
-        return 'skipped';
-      }
-      hedged = await this.fillWithRetries(this.b, coin, -dir * filledA, false, track);
     }
-    const unhedged = filledA - hedged;
-    if (unhedged >= specA.sizeStep) {
-      this.log('warn', `Захеджировано ${hedged} из ${filledA}, откатываю остаток на ${this.a.label}`);
-      const posA = await this.a.position(coin);
-      const safeReduce = Math.sign(posA) === dir && Math.abs(posA) >= unhedged;
-      await this.fillWithRetries(this.a, coin, -dir * unhedged, safeReduce, track);
+    const { filledA, hedged, entryPx } = await this.openLegs(coin, dir * size, useMaker, track);
+    if (filledA === 0) {
+      this.log('info', useMaker ? `${coin}: мейкер-ордер не исполнился за ${cfg.makerWaitSec * cfg.makerRequotes} c, пропускаю цикл` : `${this.a.label}: IOC не исполнился, пропускаю цикл`);
+      this.cycle.phase = 'failed';
+      return 'skipped';
     }
     this.cycle.notionalUsd = hedged * midA;
     this.cycle.legs = [
@@ -417,19 +391,7 @@ export class DeltaNeutralEngine {
     this.cycle.phase = 'closing';
     this.message = `Закрываю ${coin}`;
     this.emit();
-    if (useMaker && !this.stopRequested) {
-      // Close leg A as maker too; mirror each fill on B. Whatever is left is closed as taker below.
-      const expA = await this.own(this.a, coin);
-      const posA = await this.a.position(coin);
-      const reduceOnly = Math.sign(posA) === Math.sign(expA) && Math.abs(expA) <= Math.abs(posA);
-      await this.makerFill(this.a, coin, -expA, reduceOnly, async (delta) => {
-        const posB = await this.b.position(coin);
-        const closeB = Math.sign(expA) * delta;
-        await this.fillWithRetries(this.b, coin, closeB, Math.sign(posB) === -Math.sign(closeB), track);
-      }, track);
-    }
-    await this.closeOwn(this.a, coin, track);
-    await this.closeOwn(this.b, coin, track);
+    await this.closeLegs(coin, useMaker && !this.stopRequested, track);
 
     this.cycle.phase = 'done';
     this.stats.cycles++;
@@ -437,6 +399,133 @@ export class DeltaNeutralEngine {
     this.stats.totalRealizedPnlUsd += cash;
     this.log('info', `Цикл #${this.cycle.id} ${coin} закрыт, результат $${cash.toFixed(3)} (комиссии + спред)`);
     return 'done';
+  }
+
+  /**
+   * Opens `target` (signed, base units) on leg A — as maker when `useMaker` — and hedges exactly
+   * what fills on leg B. An unhedged remainder is unwound on A.
+   */
+  private async openLegs(coin: string, target: number, useMaker: boolean, track: (v: Venue, q: number, f: Fill) => void) {
+    const dir = Math.sign(target);
+    const size = Math.abs(target);
+    let filledA = 0;
+    let hedged = 0;
+    let entryPx = 0;
+    if (useMaker && this.a.postOnly && this.a.cancel) {
+      // Leg A rests post-only at the top of its book; every fill is hedged on B right away.
+      filledA = await this.makerFill(this.a, coin, dir * size, false, async (delta, px) => {
+        entryPx = px;
+        hedged += await this.fillWithRetries(this.b, coin, -dir * delta, false, track);
+      }, track);
+    } else {
+      filledA = await this.fillWithRetries(this.a, coin, dir * size, false, (v, q, f) => {
+        entryPx = f.avgPx;
+        track(v, q, f);
+      });
+      if (filledA > 0) hedged = await this.fillWithRetries(this.b, coin, -dir * filledA, false, track);
+    }
+    const unhedged = filledA - hedged;
+    if (unhedged >= this.a.spec(coin).sizeStep) {
+      this.log('warn', `Захеджировано ${hedged} из ${filledA}, откатываю остаток на ${this.a.label}`);
+      const posA = await this.retry(() => this.a.position(coin), `${this.a.label}: позиция`);
+      const safeReduce = Math.sign(posA) === dir && Math.abs(posA) >= unhedged;
+      await this.fillWithRetries(this.a, coin, -dir * unhedged, safeReduce, track);
+    }
+    return { filledA, hedged, entryPx };
+  }
+
+  /**
+   * Closes the bot's own exposure on both legs (or only `amount` of it): leg A as maker first with
+   * every fill mirrored on B, then whatever is left as taker.
+   */
+  private async closeLegs(coin: string, useMaker: boolean, track: (v: Venue, q: number, f: Fill) => void, amount?: number) {
+    const expA = await this.own(this.a, coin);
+    const step = this.a.spec(coin).sizeStep;
+    const part = amount === undefined ? Math.abs(expA) : Math.min(Math.abs(expA), amount);
+    if (part < step) return;
+    const target = -Math.sign(expA) * part;
+    let closed = 0;
+    if (useMaker && this.a.postOnly && this.a.cancel) {
+      const posA = await this.retry(() => this.a.position(coin), `${this.a.label}: позиция`);
+      const reduceOnly = Math.sign(posA) === Math.sign(expA) && part <= Math.abs(posA);
+      closed = await this.makerFill(this.a, coin, target, reduceOnly, async (delta) => {
+        const posB = await this.retry(() => this.b.position(coin), `${this.b.label}: позиция`);
+        const closeB = Math.sign(expA) * delta;
+        await this.fillWithRetries(this.b, coin, closeB, Math.sign(posB) === -Math.sign(closeB), track);
+      }, track);
+    }
+    if (amount === undefined) {
+      await this.closeOwn(this.a, coin, track);
+      await this.closeOwn(this.b, coin, track);
+      return;
+    }
+    // Partial close: finish the rest of `part` as taker, then re-align B to A.
+    const rest = part - closed;
+    if (rest >= step) {
+      const posA = await this.retry(() => this.a.position(coin), `${this.a.label}: позиция`);
+      const done = await this.fillWithRetries(this.a, coin, Math.sign(target) * rest, Math.sign(posA) === Math.sign(expA), track);
+      if (done > 0) await this.fillWithRetries(this.b, coin, Math.sign(expA) * done, false, track);
+    }
+  }
+
+  // ---------- long-lived mirrored positions (autopilot) ----------
+
+  /** Positions that existed before the autopilot opened `coin`, so they are never touched. */
+  holdBaseline(coin: string): { a: number; b: number } | null {
+    const a = this.baseline.get(this.key(this.a, coin));
+    const b = this.baseline.get(this.key(this.b, coin));
+    return a === undefined || b === undefined ? null : { a, b };
+  }
+
+  restoreHoldBaseline(coin: string, base: { a: number; b: number }) {
+    this.baseline.set(this.key(this.a, coin), base.a);
+    this.baseline.set(this.key(this.b, coin), base.b);
+  }
+
+  /** Signed own exposure on each leg for a held coin. */
+  async holdExposure(coin: string): Promise<{ a: number; b: number }> {
+    const [a, b] = await Promise.all([this.own(this.a, coin), this.own(this.b, coin)]);
+    return { a, b };
+  }
+
+  /** Adds `target` (signed, base units) to the mirrored position on `coin`. Returns the hedged size. */
+  async holdOpen(coin: string, target: number, useMaker = true): Promise<number> {
+    await Promise.all([this.a.init(), this.b.init()]);
+    if (!this.holdBaseline(coin)) {
+      const [pa, pb] = await Promise.all([
+        this.retry(() => this.a.position(coin), `${this.a.label}: позиция`),
+        this.retry(() => this.b.position(coin), `${this.b.label}: позиция`),
+      ]);
+      this.restoreHoldBaseline(coin, { a: pa, b: pb });
+    }
+    const { hedged } = await this.openLegs(coin, target, useMaker, this.holdTrack(coin));
+    this.emit();
+    return hedged;
+  }
+
+  /** Closes `amount` (base units) of the mirrored position, or all of it. */
+  async holdClose(coin: string, amount?: number, useMaker = true) {
+    await this.closeLegs(coin, useMaker, this.holdTrack(coin), amount);
+    if (amount === undefined) {
+      this.baseline.delete(this.key(this.a, coin));
+      this.baseline.delete(this.key(this.b, coin));
+    }
+    this.emit();
+  }
+
+  /** Re-aligns the hedge leg if the two legs drifted apart. */
+  async holdAlign(coin: string) {
+    await this.checkDelta(coin, this.holdTrack(coin));
+  }
+
+  private holdTrack(coin: string) {
+    return (venue: Venue, signedQty: number, fill: Fill) => {
+      if (fill.filledSize <= 0) return;
+      this.recordFill(venue.id, fill);
+      this.stats.totalRealizedPnlUsd -= fill.feeUsd;
+      this.stats.realizedPnlTodayUsd -= fill.feeUsd;
+      this.log('trade', `${venue.label} ${signedQty > 0 ? 'BUY' : 'SELL'} ${+fill.filledSize.toPrecision(8)} ${coin} @ ${fill.avgPx}`);
+    };
   }
 
   /**
