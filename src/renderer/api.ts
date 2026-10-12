@@ -25,7 +25,7 @@ export interface Api {
   stopBot(): Promise<BotStatus>;
   flatten(): Promise<BotStatus>;
   resetStats(): Promise<BotStatus>;
-  openHedge(coin: string, side: 'long' | 'short', size: number, venue: BotVenueId): Promise<BotStatus>;
+  openHedge(coin: string, side: 'long' | 'short', size: number, venue: BotVenueId, maker: boolean): Promise<BotStatus>;
   closeHedge(id: string): Promise<BotStatus>;
   getCreds(): Promise<VenueCredentialsView>;
   setCreds(input: CredentialsInput): Promise<VenueCredentialsView>;

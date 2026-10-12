@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "updatedAt": "2026-10-12",
   "marketNote": "Октябрь 2026: по открытому интересу лидирует Hyperliquid (~$12B OI), Lighter и Aster уже раздали токены. Из крупных перпов без токена с живой программой поинтов остались Variational (TGE в Q4 2026), Nado (Season 2), Extended (поинты почти закончились), Pacifica, StandX и Ondo Perps. Для фарма ботом важен торговый API, поэтому выбраны Variational как главный дроп и Nado как автоматизируемая нога.",
   "projects": [
@@ -275,12 +275,12 @@
       "points": "Новая программа поинтов за торговлю через Robinhood Chain (с августа 2026, x2 для Robinhood Wallet). Отдельный payout за неё не обещан.",
       "token": "LIT запущен; 30.12.2025 раздали 25% supply. Ещё ~25% зарезервировано под будущие награды.",
       "fees": "0% для стандартных аккаунтов",
-      "api": "API и Python SDK есть; подписание через Go-библиотеку (в Node.js нужна обёртка).",
+      "api": "REST + WebSocket; транзакции подписываются официальным Go-сигнером (WASM), он встроен в приложение. API-ключ может торговать, но не выводить средства.",
       "risks": [
         "Главный дроп уже прошёл",
         "Новые поинты без гарантий"
       ],
-      "verdict": "Основной дроп упущен. Lighter полезен как бесплатная хедж-нога; адаптер можно добавить в будущей версии.",
+      "verdict": "Основной дроп упущен, но Lighter — лучшая хедж-нога: 0% комиссий, глубокие стаканы, API (подпись через официальный WASM-сигнер). В приложении это нога B по умолчанию. Фармить Lighter RH ботом нельзя: правила программы прямо запрещают ботов.",
       "scores": {
         "team": 9,
         "funding": 8,
@@ -443,5 +443,59 @@
       "label": "Nado rewards API (поинты по эпохам)",
       "url": "https://docs.nado.xyz/developer-resources/api/endpoints"
     }
-  ]
+  ],
+  "economics": {
+    "nado": {
+      "pointsPer1MVolume": 160,
+      "cashBackBps": 0.4,
+      "pointValue": 0.6
+    },
+    "variational": {
+      "pointsPer1MVolume": 9.6,
+      "pointsPer1MOiWeek": 86,
+      "pointValue": 20,
+      "roundTripSpreadBps": 1.0
+    },
+    "fees": {
+      "nadoMaker": 1,
+      "nadoTaker": 3.5,
+      "hlTaker": 4.5,
+      "lighterTaker": 0
+    },
+    "hedgeSlippageBps": 0.3,
+    "notes": [
+      "Nado: ~340k поинтов в неделю при объёме протокола ~$2.1B в неделю, т.е. ~160 поинтов на $1M. Это среднее по протоколу (публичный rewards API). Мейкер-объём и «нетоксичная» торговля, вероятно, весят больше.",
+      "Nado раз в неделю раздаёт трейдерам кэш $80–100k USDT0, это ~0.4 bps от объёма (rewards API, cash_incentives).",
+      "Цена поинта Nado (~$0.4–0.8) — только оценка: токен не анонсирован, поинты непередаваемые. PointFarm даёт $0.4.",
+      "Variational: ~9.6 поинта на $1M объёма и ~86 на $1M открытой позиции в неделю. Это оценки трекера funding-farm по публичным данным; официальная формула закрыта. Аналитики тоже пишут, что OI весит сильнее объёма.",
+      "Цены поинтов Variational: весной на OTC $5–7, сейчас OTC ~$20 (сделка твоего друга), Polymarket предполагает ~$43–49 (FDV $1.5B).",
+      "Lighter: 0% комиссий для стандартных аккаунтов — самая дешёвая хедж-нога. Фармить там не нужно: Lighter на Robinhood Chain прямо запрещает ботов в программе поинтов."
+    ],
+    "sources": [
+      {
+        "label": "Variational points calculator (funding-farm)",
+        "url": "https://funding-farm.vercel.app/"
+      },
+      {
+        "label": "From $5 to $50 per point (Substack)",
+        "url": "https://threadingontheedge.substack.com/p/from-5-to-50-per-point-the-variational"
+      },
+      {
+        "label": "Variational Points Valuation (X)",
+        "url": "https://x.com/shaundadevens/article/2103526724562477539"
+      },
+      {
+        "label": "Nado Season 2",
+        "url": "https://docs.nado.xyz/incentives-and-rewards/points/season-2-live"
+      },
+      {
+        "label": "PointFarm",
+        "url": "https://pointfarm-mu.vercel.app/en"
+      },
+      {
+        "label": "Lighter RH points terms",
+        "url": "https://docs.lighter.xyz/points-program/lighter-on-robinhood-chain-points"
+      }
+    ]
+  }
 }

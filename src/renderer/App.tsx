@@ -7,14 +7,16 @@ import { Markets } from './pages/Markets';
 import { Bot } from './pages/Bot';
 import { Points } from './pages/Points';
 import { Settings } from './pages/Settings';
+import { Economics } from './pages/Economics';
 
-export type Page = 'overview' | 'research' | 'markets' | 'bot' | 'points' | 'settings';
+export type Page = 'overview' | 'research' | 'markets' | 'bot' | 'economics' | 'points' | 'settings';
 
 const NAV: { id: Page; label: string; icon: string }[] = [
   { id: 'overview', label: 'Обзор', icon: '◎' },
   { id: 'research', label: 'Исследование', icon: '⌕' },
   { id: 'markets', label: 'Рынки', icon: '≋' },
   { id: 'bot', label: 'Бот (дельта-нейтрал)', icon: '⇄' },
+  { id: 'economics', label: 'Экономика фарма', icon: '$' },
   { id: 'points', label: 'Поинты & OTC', icon: '◈' },
   { id: 'settings', label: 'Настройки', icon: '⚙' },
 ];
@@ -88,6 +90,7 @@ export function App() {
         {page === 'research' && <Research feed={feed} onRefresh={() => loadFeed(true)} />}
         {page === 'markets' && <Markets />}
         {page === 'bot' && <Bot status={bot} />}
+        {page === 'economics' && <Economics feed={feed} bot={bot} />}
         {page === 'points' && <Points feed={feed} bot={bot} />}
         {page === 'settings' && <Settings update={update} info={info} />}
       </main>

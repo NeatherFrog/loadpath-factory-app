@@ -1,0 +1,37 @@
+import { describe, expect, it } from 'vitest';
+import { compareStrategies, omniHoldPlan, type EconomicsInputs } from '../src/shared/economics';
+
+const E: EconomicsInputs = {
+  nado: { pointsPer1MVolume: 160, cashBackBps: 0.4, pointValue: 0.8 },
+  variational: { pointsPer1MVolume: 9.6, pointsPer1MOiWeek: 86, pointValue: 20, roundTripSpreadBps: 1 },
+  fees: { nadoMaker: 1, nadoTaker: 3.5, hlTaker: 4.5, lighterTaker: 0 },
+  hedgeSlippageBps: 0.3,
+};
+
+describe('economics', () => {
+  it('ranks hedge venues by cost: HL taker > HL with Nado maker > Lighter', () => {
+    const r = Object.fromEntries(compareStrategies(E).map((s) => [s.id, s]));
+    expect(r['nado-hl-taker'].costPer1M).toBeCloseTo(800 + 60, 5);
+    expect(r['nado-hl-maker'].costPer1M).toBeCloseTo(550 + 30, 5);
+    expect(r['nado-lighter'].costPer1M).toBeCloseTo(100 + 30, 5);
+    // Nado point cost = (cost - $40 cash back) / 160 points
+    expect(r['nado-lighter'].costPerPoint!).toBeCloseTo((130 - 40) / 160, 5);
+  });
+
+  it('Omni + Nado churn earns points on both venues', () => {
+    const r = compareStrategies(E).find((s) => s.id === 'omni-churn')!;
+    expect(r.pointsVar).toBeCloseTo(9.6);
+    expect(r.pointsNado).toBeCloseTo(160);
+    expect(r.netPer1M).toBeGreaterThan(0);
+  });
+
+  it('holding Omni OI for a week: points, costs and funding', () => {
+    const p = omniHoldPlan(E, 10_000, 7, 0.08);
+    expect(p.points).toBeCloseTo(0.86, 5);
+    expect(p.pointsValue).toBeCloseTo(17.2, 5);
+    // 1 bp Omni round trip + 2 bp Nado maker on $10k, minus cash back on $20k Nado volume
+    expect(p.entryExit).toBeCloseTo(1 + 2 - 0.8, 5);
+    expect(p.funding).toBeCloseTo((10_000 * 0.08 * 7) / 365, 5);
+    expect(p.net).toBeGreaterThan(15);
+  });
+});

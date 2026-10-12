@@ -207,4 +207,59 @@ describe('DeltaNeutralEngine', () => {
     expect(b.orders.length).toBe(0);
     expect(a.pos.get('ETH') ?? 0).toBe(0);
   });
+
+  it('manual hedge on a third venue: maker first, taker for the rest', async () => {
+    const a = new FakeVenue('nado', 'A');
+    const b = new FakeVenue('hyperliquid', 'B');
+    const c = new MakerVenue('lighter', 'C');
+    c.makerFillFrac = [0.5, ...new Array(1_000).fill(0)]; // maker fills half, then stalls
+    const engine = new DeltaNeutralEngine(a, b, cfg, {
+      sleep: () => new Promise((r) => setImmediate(r)),
+      resolveVenue: () => c,
+    });
+    const h = await engine.openManualHedge('ETH', 'long', 2, 'lighter', true);
+    expect(h.status).toBe('open');
+    expect(c.posted[0].size).toBe(-2);
+    expect(c.orders.at(-1)!.size).toBeCloseTo(-1, 5); // taker completes the remaining half
+    expect(c.pos.get('ETH')).toBe(-2);
+    expect(h.hedgeSize).toBe(-2);
+  });
+
+  it('a timed-out IOC that actually filled is not sent twice', async () => {
+    const a = new FakeVenue('nado', 'A');
+    const b = new FakeVenue('hyperliquid', 'B');
+    let calls = 0;
+    const orig = b.ioc.bind(b);
+    b.ioc = async (coin, size, slip, ro) => {
+      calls++;
+      const f = await orig(coin, size, slip, ro);
+      if (calls === 1) throw new Error('The operation was aborted due to timeout'); // filled, response lost
+      return f;
+    };
+    const { engine, logs } = makeEngine(a, b, { dailyVolumeTargetUsd: 300 });
+    await runUntilStopped(engine);
+    expect(engine.status().state).toBe('stopped');
+    expect(a.pos.get('ETH')).toBe(0);
+    expect(b.pos.get('ETH')).toBe(0);
+    // the first hedge was not repeated after the timeout: open on B happened exactly once
+    expect(b.orders.filter((o) => !o.reduceOnly).length).toBe(1);
+    expect(logs.some((l) => l.msg.includes('сетевая ошибка'))).toBe(true);
+  });
+
+  it('survives transient book/position failures without stopping', async () => {
+    const a = new FakeVenue('nado', 'A');
+    const b = new FakeVenue('hyperliquid', 'B');
+    let n = 0;
+    const origBook = b.book.bind(b);
+    b.book = async () => {
+      if (n++ % 3 === 0) throw new Error('fetch failed: ECONNRESET');
+      return origBook();
+    };
+    const { engine } = makeEngine(a, b, { dailyVolumeTargetUsd: 600 });
+    await runUntilStopped(engine);
+    expect(engine.status().state).toBe('stopped');
+    expect(engine.status().stats.failedCycles).toBe(0);
+    expect(a.pos.get('ETH')).toBe(0);
+    expect(b.pos.get('ETH')).toBe(0);
+  });
 });

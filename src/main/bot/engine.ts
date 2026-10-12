@@ -19,12 +19,15 @@ export interface EngineDeps {
   onChange?: (s: BotStatus) => void;
   initialStats?: BotStats;
   initialHedges?: ManualHedge[];
+  /** Builds venues that are not legs A/B (e.g. a manual-hedge venue). */
+  resolveVenue?: (id: BotVenueId) => Venue;
 }
 
 const HEDGE_RETRIES = 4;
 const CHECK_EVERY_MS = 30_000;
 const SKIP_WAIT_MS = 15_000;
-const MAKER_REQUOTES = 3;
+const NET_RETRIES = 6;
+const UNWIND_ATTEMPTS = 4;
 const MAKER_POLL_MS = 1500;
 
 export function emptyStats(day = utcDay()): BotStats {
@@ -112,10 +115,18 @@ export class DeltaNeutralEngine {
     this.emit();
   }
 
+  private extra = new Map<BotVenueId, Venue>();
+
   private venue(id: BotVenueId): Venue {
     if (this.a.id === id) return this.a;
     if (this.b.id === id) return this.b;
-    throw new Error(`Venue ${id} is not connected`);
+    let v = this.extra.get(id);
+    if (!v && this.deps.resolveVenue) {
+      v = this.deps.resolveVenue(id);
+      this.extra.set(id, v);
+    }
+    if (!v) throw new Error(`Venue ${id} is not connected`);
+    return v;
   }
 
   // ---------- lifecycle ----------
@@ -189,17 +200,30 @@ export class DeltaNeutralEngine {
         if (this.cycle) this.cycle.phase = 'failed';
         // Never leave a one-sided position behind: unwind what this cycle opened.
         if (coin) {
-          for (const venue of [this.a, this.b]) {
+          let naked = true;
+          for (let attempt = 0; attempt < UNWIND_ATTEMPTS && naked; attempt++) {
+            if (attempt > 0) {
+              this.log('warn', `${coin}: повторяю откат (${attempt + 1}/${UNWIND_ATTEMPTS}) через 20 c`);
+              await this.sleep(20_000, () => false);
+            }
+            for (const venue of [this.a, this.b]) {
+              try {
+                await this.closeOwn(venue, coin);
+              } catch (e) {
+                this.log('error', `${venue.label} ${coin}: откат не удался — ${errMsg(e)}`);
+              }
+            }
             try {
-              await this.closeOwn(venue, coin);
+              naked = await this.hasNakedExposure(coin);
             } catch (e) {
-              this.log('error', `${venue.label} ${coin}: откат не удался — ${errMsg(e)}`);
+              this.log('error', `${coin}: не удалось проверить позиции — ${errMsg(e)}`);
             }
           }
-          if (await this.hasNakedExposure(coin)) {
-            this.setState('error', `Осталась незахеджированная позиция ${coin} — проверь биржи вручную`);
+          if (naked) {
+            this.setState('error', `Осталась незахеджированная позиция ${coin}. Нажми «Закрыть всё» или закрой её на бирже вручную`);
             return;
           }
+          this.log('info', `${coin}: позиции после сбоя закрыты, продолжаю`);
         }
       }
       this.cycle = null;
@@ -243,12 +267,13 @@ export class DeltaNeutralEngine {
 
   /** The bot's own position on a venue: current position minus the pre-cycle baseline. */
   private async own(venue: Venue, coin: string): Promise<number> {
-    return (await venue.position(coin)) - (this.baseline.get(this.key(venue, coin)) ?? 0);
+    const pos = await this.retry(() => venue.position(coin), `${venue.label}: позиция`);
+    return pos - (this.baseline.get(this.key(venue, coin)) ?? 0);
   }
 
   /** Bring the venue back to its baseline for `coin`, i.e. close only what the bot opened. */
   private async closeOwn(venue: Venue, coin: string, track?: (v: Venue, q: number, f: Fill) => void) {
-    const pos = await venue.position(coin);
+    const pos = await this.retry(() => venue.position(coin), `${venue.label}: позиция`);
     const exposure = pos - (this.baseline.get(this.key(venue, coin)) ?? 0);
     const step = venue.spec(coin).sizeStep;
     if (Math.abs(exposure) < step) return;
@@ -266,7 +291,10 @@ export class DeltaNeutralEngine {
   private async runCycle(): Promise<'skipped' | 'done'> {
     const cfg = this.config;
     const coin = cfg.coins[Math.floor(this.random() * cfg.coins.length)];
-    const [bookA, bookB] = await Promise.all([this.a.book(coin), this.b.book(coin)]);
+    const [bookA, bookB] = await Promise.all([
+      this.retry(() => this.a.book(coin), `${this.a.label}: стакан`),
+      this.retry(() => this.b.book(coin), `${this.b.label}: стакан`),
+    ]);
     const midA = (bookA.bid + bookA.ask) / 2;
     const midB = (bookB.bid + bookB.ask) / 2;
     const totalSpread = spreadBps(bookA.bid, bookA.ask) + spreadBps(bookB.bid, bookB.ask);
@@ -280,7 +308,7 @@ export class DeltaNeutralEngine {
       return 'skipped';
     }
 
-    const [fA, fB] = await Promise.all([this.a.fundingApr(coin), this.b.fundingApr(coin)]);
+    const [fA, fB] = await Promise.all([this.a.fundingApr(coin).catch(() => null), this.b.fundingApr(coin).catch(() => null)]);
     const dir = chooseDirection(cfg.direction, fA, fB, this.random);
     const notional = randomBetween(cfg.notionalMinUsd, cfg.notionalMaxUsd, this.random);
     const specA = this.a.spec(coin);
@@ -292,7 +320,10 @@ export class DeltaNeutralEngine {
       return 'skipped';
     }
 
-    const [baseA, baseB] = await Promise.all([this.a.position(coin), this.b.position(coin)]);
+    const [baseA, baseB] = await Promise.all([
+      this.retry(() => this.a.position(coin), `${this.a.label}: позиция`),
+      this.retry(() => this.b.position(coin), `${this.b.label}: позиция`),
+    ]);
     this.baseline.set(this.key(this.a, coin), baseA);
     this.baseline.set(this.key(this.b, coin), baseB);
     if (baseA !== 0 || baseB !== 0) {
@@ -333,7 +364,7 @@ export class DeltaNeutralEngine {
         hedged += await this.fillWithRetries(this.b, coin, -dir * delta, false, track);
       }, track);
       if (filledA === 0) {
-        this.log('info', `${coin}: мейкер-ордер не исполнился за ${cfg.makerWaitSec * MAKER_REQUOTES} c, пропускаю цикл`);
+        this.log('info', `${coin}: мейкер-ордер не исполнился за ${cfg.makerWaitSec * cfg.makerRequotes} c, пропускаю цикл`);
         this.cycle.phase = 'failed';
         return 'skipped';
       }
@@ -374,7 +405,12 @@ export class DeltaNeutralEngine {
     this.emit();
     while (this.now() < this.cycle.closeAt && !this.stopRequested) {
       await this.sleep(Math.min(CHECK_EVERY_MS, this.cycle.closeAt - this.now()), () => this.stopRequested);
-      await this.checkDelta(coin, track);
+      try {
+        await this.checkDelta(coin, track);
+      } catch (err) {
+        if (!isTransient(err)) throw err;
+        this.log('warn', `${coin}: проверка дельты не удалась (${errMsg(err)}), повторю позже`);
+      }
     }
 
     // Close both legs
@@ -419,11 +455,11 @@ export class DeltaNeutralEngine {
     const spec = venue.spec(coin);
     const sign = Math.sign(target);
     const want = Math.abs(target);
-    const start = await venue.position(coin);
+    const start = await this.retry(() => venue.position(coin), `${venue.label}: позиция`);
     let reported = 0;
 
     const report = async (px: number) => {
-      const pos = await venue.position(coin);
+      const pos = await this.retry(() => venue.position(coin), `${venue.label}: позиция`);
       const filled = Math.max(0, Math.min(want, sign * (pos - start)));
       const delta = Number((filled - reported).toFixed(10));
       if (delta >= spec.sizeStep / 2) {
@@ -433,10 +469,20 @@ export class DeltaNeutralEngine {
       }
     };
 
-    for (let q = 0; q < MAKER_REQUOTES && want - reported >= spec.sizeStep && !this.stopRequested; q++) {
-      const book = await venue.book(coin);
+    for (let q = 0; q < Math.max(1, this.config.makerRequotes ?? 3) && want - reported >= spec.sizeStep && !this.stopRequested; q++) {
+      const book = await this.retry(() => venue.book(coin), `${venue.label}: стакан`);
       const px = sign > 0 ? book.bid : book.ask;
-      const id = await venue.postOnly!(coin, sign * (want - reported), px, reduceOnly);
+      let id: string | null = null;
+      try {
+        id = await venue.postOnly!(coin, sign * (want - reported), px, reduceOnly);
+      } catch (err) {
+        if (!isTransient(err)) throw err;
+        // The order may or may not exist; any fill is still picked up from the position below.
+        this.log('warn', `${venue.label}: мейкер-ордер не подтвердился (${errMsg(err)}), переставляю`);
+        await this.sleep(backoff(q), () => false);
+        await report(px);
+        continue;
+      }
       if (!id) continue; // book moved and the order would have crossed: re-quote
       const deadline = this.now() + this.config.makerWaitSec * 1000;
       while (this.now() < deadline && !this.stopRequested) {
@@ -444,7 +490,11 @@ export class DeltaNeutralEngine {
         await report(px);
         if (want - reported < spec.sizeStep) break;
       }
-      await venue.cancel!(coin, id);
+      try {
+        await this.retry(() => venue.cancel!(coin, id!), `${venue.label}: отмена ордера`);
+      } catch (err) {
+        this.log('error', `${venue.label}: не удалось отменить ордер ${id} — ${errMsg(err)}. Проверь открытые ордера на бирже`);
+      }
       await report(px); // fills that landed between the last poll and the cancel
     }
     return reported;
@@ -470,21 +520,61 @@ export class DeltaNeutralEngine {
     track: (v: Venue, q: number, f: Fill) => void,
   ): Promise<number> {
     const step = venue.spec(coin).sizeStep;
-    let remaining = Math.abs(target);
+    const want = Math.abs(target);
     const sign = Math.sign(target);
-    let filled = 0;
-    for (let i = 0; i < HEDGE_RETRIES && remaining >= step; i++) {
-      const slip = this.config.slippageBps * 2 ** i;
-      const fill = await venue.ioc(coin, sign * roundToStep(remaining, step), slip, reduceOnly);
-      track(venue, sign * fill.filledSize, fill);
-      filled += fill.filledSize;
-      remaining = Number((remaining - fill.filledSize).toFixed(10));
+    if (want < step) return 0;
+    const start = await this.retry(() => venue.position(coin), `${venue.label}: позиция`);
+    let reported = 0;
+    let noFill = 0;
+    let netErrors = 0;
+    while (want - reported >= step && noFill < HEDGE_RETRIES && netErrors < NET_RETRIES) {
+      const slip = this.config.slippageBps * 2 ** Math.min(noFill + netErrors, 3);
+      let fill: Fill | null = null;
+      try {
+        fill = await venue.ioc(coin, sign * roundToStep(want - reported, step), slip, reduceOnly);
+      } catch (err) {
+        if (!isTransient(err)) throw err;
+        netErrors++;
+        this.log('warn', `${venue.label}: сетевая ошибка (${errMsg(err)}), проверяю позицию и повторяю`);
+        await this.sleep(backoff(netErrors - 1), () => false);
+      }
+      // The position is the source of truth: an order can fill even when its response is lost.
+      const pos = await this.retry(() => venue.position(coin), `${venue.label}: позиция`);
+      const actual = Math.max(0, Math.min(want, sign * (pos - start)));
+      const delta = Number((actual - reported).toFixed(10));
+      if (delta >= step / 2) {
+        let f: Fill;
+        if (fill && fill.filledSize > 0) {
+          f = { filledSize: delta, avgPx: fill.avgPx, feeUsd: (fill.feeUsd * delta) / fill.filledSize };
+        } else {
+          const b = await this.retry(() => venue.book(coin), `${venue.label}: стакан`);
+          const px = sign > 0 ? b.ask : b.bid;
+          f = { filledSize: delta, avgPx: px, feeUsd: delta * px * (venue.spec(coin).takerFeeBps / 10_000) };
+        }
+        track(venue, sign * delta, f);
+        reported = actual;
+      } else if (fill) {
+        noFill++;
+      }
     }
-    return filled;
+    return reported;
+  }
+
+  /** Retries transient network failures (timeouts, resets, 429/5xx) with exponential backoff. */
+  private async retry<T>(fn: () => Promise<T>, what: string, attempts = NET_RETRIES): Promise<T> {
+    for (let i = 0; ; i++) {
+      try {
+        return await fn();
+      } catch (err) {
+        if (!isTransient(err) || i >= attempts - 1) throw err;
+        this.log('warn', `${what}: ${errMsg(err)} — повтор через ${Math.round(backoff(i) / 1000)} c`);
+        await this.sleep(backoff(i), () => false);
+      }
+    }
   }
 
   private async closePosition(venue: Venue, coin: string, track?: (v: Venue, q: number, f: Fill) => void) {
-    const pos = await venue.position(coin);
+    const pos = await this.retry(() => venue.position(coin), `${venue.label}: позиция`);
     if (Math.abs(pos) < venue.spec(coin).sizeStep) return;
     const record = track ?? ((v: Venue, _q: number, f: Fill) => f.filledSize > 0 && this.recordFill(v.id, f));
     const done = await this.fillWithRetries(venue, coin, -pos, true, record);
@@ -507,19 +597,26 @@ export class DeltaNeutralEngine {
   // ---------- manual Omni hedges ----------
 
   /** The user opened `size` on Variational Omni by hand; open the opposite side on `venueId`. */
-  async openManualHedge(coin: string, omniSide: 'long' | 'short', size: number, venueId: BotVenueId): Promise<ManualHedge> {
+  async openManualHedge(coin: string, omniSide: 'long' | 'short', size: number, venueId: BotVenueId, maker = false): Promise<ManualHedge> {
     const venue = this.venue(venueId);
     await venue.init();
     if (!venue.hasMarket(coin)) throw new Error(`${venue.label}: нет рынка ${coin}`);
     const target = omniSide === 'long' ? -size : size;
     let px = 0;
-    const filled = await this.fillWithRetries(venue, coin, target, false, (v, q, f) => {
+    const track = (v: Venue, q: number, f: Fill) => {
       if (f.filledSize > 0) {
         this.recordFill(v.id, f);
         px = f.avgPx;
-        this.log('trade', `Хедж Omni: ${v.label} ${q > 0 ? 'BUY' : 'SELL'} ${f.filledSize} ${coin} @ ${f.avgPx}`);
+        this.log('trade', `Хедж Omni: ${v.label} ${q > 0 ? 'BUY' : 'SELL'} ${+f.filledSize.toPrecision(8)} ${coin} @ ${f.avgPx}`);
       }
-    });
+    };
+    let filled = 0;
+    if (maker && venue.postOnly && venue.cancel) {
+      // Maker first (cheap); whatever did not fill within the wait is completed as taker.
+      filled = await this.makerFill(venue, coin, target, false, async () => {}, track);
+    }
+    const rest = Math.abs(target) - filled;
+    if (rest >= venue.spec(coin).sizeStep) filled += await this.fillWithRetries(venue, coin, Math.sign(target) * rest, false, track);
     this.shiftBaseline(venueId, coin, Math.sign(target) * filled);
     const hedge: ManualHedge = {
       id: `${this.now()}-${coin}`,
@@ -559,6 +656,17 @@ export class DeltaNeutralEngine {
     hedge.status = 'closed';
     this.emit();
   }
+}
+
+/** Network-level failures worth retrying (the request may or may not have reached the venue). */
+export function isTransient(err: unknown): boolean {
+  return /timeout|timed out|aborted|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket|fetch failed|network|\b429\b|\b50[0-4]\b|Too Many Requests|Bad Gateway|Service Unavailable/i.test(
+    errMsg(err),
+  );
+}
+
+function backoff(i: number): number {
+  return Math.min(1000 * 2 ** i, 15_000);
 }
 
 function errMsg(err: unknown): string {

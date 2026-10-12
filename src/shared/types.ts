@@ -62,6 +62,7 @@ export interface ResearchFeed {
   version: number;
   updatedAt: string;
   marketNote: string;
+  economics?: import('./economics').EconomicsInputs & { notes: string[]; sources: ProjectLink[] };
   projects: Project[];
   otcVenues: OtcVenue[];
   sources: ProjectLink[];
@@ -98,7 +99,7 @@ export interface MarketSnapshot {
 
 // ---- Bot ----
 
-export type BotVenueId = 'nado' | 'hyperliquid';
+export type BotVenueId = 'nado' | 'hyperliquid' | 'lighter';
 export type BotMode = 'paper' | 'live';
 
 export interface BotConfig {
@@ -121,13 +122,14 @@ export interface BotConfig {
   deltaToleranceUsd: number; // rebalance when |net exposure| exceeds this
   makerLegA: boolean; // leg A uses post-only limit orders (much cheaper), leg B hedges each fill
   makerWaitSec: number; // how long a resting order may wait before it is re-quoted
+  makerRequotes: number; // re-quotes before the remainder falls back to a taker order
 }
 
 export const DEFAULT_BOT_CONFIG: BotConfig = {
   mode: 'paper',
   legA: 'nado',
-  legB: 'hyperliquid',
-  coins: ['BTC', 'ETH', 'SOL'],
+  legB: 'lighter',
+  coins: ['BTC', 'ETH'],
   notionalMinUsd: 150,
   notionalMaxUsd: 300,
   holdMinMinutes: 3,
@@ -143,6 +145,7 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
   deltaToleranceUsd: 40,
   makerLegA: true,
   makerWaitSec: 45,
+  makerRequotes: 6,
 };
 
 export type BotState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';
@@ -215,11 +218,13 @@ export interface ManualHedge {
 export interface VenueCredentialsView {
   nado: { address: string; hasKey: boolean; subaccount: string };
   hyperliquid: { address: string; hasKey: boolean };
+  lighter: { accountIndex: string; apiKeyIndex: string; hasKey: boolean };
 }
 
 export interface CredentialsInput {
   nado?: { address?: string; privateKey?: string; subaccount?: string };
   hyperliquid?: { address?: string; privateKey?: string };
+  lighter?: { accountIndex?: string; apiKeyIndex?: string; privateKey?: string };
 }
 
 export interface PointsEntry {

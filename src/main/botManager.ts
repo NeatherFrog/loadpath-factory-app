@@ -2,7 +2,8 @@ import type { BotConfig, BotLogEntry, BotStatus, BotVenueId } from '../shared/ty
 import { DeltaNeutralEngine, emptyStats } from './bot/engine';
 import type { Venue } from './bot/venue';
 import { PaperVenue } from './bot/venues/paper';
-import { hlPublicSource, nadoPublicSource } from './bot/venues/sources';
+import { hlPublicSource, lighterPublicSource, nadoPublicSource } from './bot/venues/sources';
+import { LighterVenue } from './bot/venues/lighter';
 import { NadoVenue } from './bot/venues/nado';
 import { HyperliquidVenue } from './bot/venues/hyperliquid';
 import type { Store } from './store';
@@ -22,11 +23,13 @@ export class BotManager {
 
   private makeVenue(id: BotVenueId, mode: BotConfig['mode']): Venue {
     if (mode === 'paper') {
-      return id === 'nado'
-        ? new PaperVenue('nado', 'Nado (paper)', nadoPublicSource())
-        : new PaperVenue('hyperliquid', 'Hyperliquid (paper)', hlPublicSource());
+      if (id === 'nado') return new PaperVenue('nado', 'Nado (paper)', nadoPublicSource());
+      if (id === 'lighter') return new PaperVenue('lighter', 'Lighter (paper)', lighterPublicSource());
+      return new PaperVenue('hyperliquid', 'Hyperliquid (paper)', hlPublicSource());
     }
-    return id === 'nado' ? new NadoVenue(this.store.nadoCredentials()) : new HyperliquidVenue(this.store.hyperliquidCredentials());
+    if (id === 'nado') return new NadoVenue(this.store.nadoCredentials());
+    if (id === 'lighter') return new LighterVenue(this.store.lighterCredentials());
+    return new HyperliquidVenue(this.store.hyperliquidCredentials());
   }
 
   /** Engine for the current config; rebuilt when venues or mode change (only while stopped). */
@@ -47,6 +50,7 @@ export class BotManager {
       initialHedges: prev?.hedges ?? this.store.hedges,
       log: (e) => this.addLog(e),
       onChange: (s) => this.onChange(s),
+      resolveVenue: (id) => this.makeVenue(id, cfg.mode),
     });
     this.engineKey = key;
     return this.engine;
@@ -105,9 +109,9 @@ export class BotManager {
     return engine.status();
   }
 
-  async openHedge(coin: string, side: 'long' | 'short', size: number, venue: BotVenueId) {
+  async openHedge(coin: string, side: 'long' | 'short', size: number, venue: BotVenueId, maker = false) {
     const engine = this.ensureEngine();
-    await engine.openManualHedge(coin, side, size, venue);
+    await engine.openManualHedge(coin, side, size, venue, maker);
     return engine.status();
   }
 

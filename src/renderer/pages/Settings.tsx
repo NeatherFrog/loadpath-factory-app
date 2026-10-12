@@ -9,6 +9,9 @@ export function Settings({ update, info }: { update: UpdateStatus; info: AppInfo
   const [nadoKey, setNadoKey] = useState('');
   const [hlAddr, setHlAddr] = useState('');
   const [hlKey, setHlKey] = useState('');
+  const [ltAcc, setLtAcc] = useState('');
+  const [ltIdx, setLtIdx] = useState('');
+  const [ltKey, setLtKey] = useState('');
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
@@ -17,6 +20,8 @@ export function Settings({ update, info }: { update: UpdateStatus; info: AppInfo
       setNadoAddr(c.nado.address);
       setNadoSub(c.nado.subaccount);
       setHlAddr(c.hyperliquid.address);
+      setLtAcc(c.lighter.accountIndex);
+      setLtIdx(c.lighter.apiKeyIndex);
     });
   }, []);
 
@@ -25,10 +30,12 @@ export function Settings({ update, info }: { update: UpdateStatus; info: AppInfo
       const c = await api().setCreds({
         nado: { address: nadoAddr, subaccount: nadoSub, ...(nadoKey ? { privateKey: nadoKey } : {}) },
         hyperliquid: { address: hlAddr, ...(hlKey ? { privateKey: hlKey } : {}) },
+        lighter: { accountIndex: ltAcc, apiKeyIndex: ltIdx, ...(ltKey ? { privateKey: ltKey } : {}) },
       });
       setCreds(c);
       setNadoKey('');
       setHlKey('');
+      setLtKey('');
       setMsg('Сохранено. Ключи зашифрованы системным хранилищем (Windows DPAPI / macOS Keychain).');
     } catch (e) {
       setMsg(String(e));
@@ -67,6 +74,20 @@ export function Settings({ update, info }: { update: UpdateStatus; info: AppInfo
             <label className="wide">Адрес основного аккаунта<input value={hlAddr} onChange={(e) => setHlAddr(e.target.value)} placeholder="0x…" /></label>
             <label className="wide">Приватный ключ API-кошелька {creds?.hyperliquid.hasKey && <span className="ok">✓ сохранён</span>}
               <input type="password" value={hlKey} onChange={(e) => setHlKey(e.target.value)} placeholder={creds?.hyperliquid.hasKey ? 'оставь пустым, чтобы не менять' : '0x…'} />
+            </label>
+          </div>
+        </div>
+        <div className="card">
+          <h3>Lighter (хедж с 0% комиссии)</h3>
+          <ol className="small steps">
+            <li>Внеси USDC на <a onClick={() => void api().openExternal('https://app.lighter.xyz')}>app.lighter.xyz</a>.</li>
+            <li>Создай API-ключ на странице <a onClick={() => void api().openExternal('https://app.lighter.xyz/apikeys')}>API Keys</a>. Скопируй Account Index, API Key Index и Private Key. Такой ключ может торговать, но не может вывести средства без подписи твоего кошелька.</li>
+          </ol>
+          <div className="form">
+            <label>Account Index<input value={ltAcc} onChange={(e) => setLtAcc(e.target.value)} placeholder="например 123456" /></label>
+            <label>API Key Index<input value={ltIdx} onChange={(e) => setLtIdx(e.target.value)} placeholder="2–254" /></label>
+            <label className="wide">API Private Key {creds?.lighter.hasKey && <span className="ok">✓ сохранён</span>}
+              <input type="password" value={ltKey} onChange={(e) => setLtKey(e.target.value)} placeholder={creds?.lighter.hasKey ? 'оставь пустым, чтобы не менять' : 'ключ Lighter'} />
             </label>
           </div>
         </div>

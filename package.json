@@ -1,7 +1,7 @@
 {
   "name": "retrodrop-dashboard",
   "productName": "RetroDrop Dashboard",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Airdrop research dashboard and delta-neutral points farming bot for perp DEXes",
   "author": "NeatherFrog",
   "license": "UNLICENSED",
@@ -17,6 +17,7 @@
     "release": "npm run build && electron-builder --publish always"
   },
   "devDependencies": {
+    "@lifi/perps-sdk-provider-lighter": "^37.0.1",
     "@nadohq/client": "^0.53.0",
     "@nktkas/hyperliquid": "^0.33.3",
     "@types/node": "^22.20.5",
@@ -55,6 +56,10 @@
       {
         "from": "data",
         "to": "data"
+      },
+      {
+        "from": "dist/wasm",
+        "to": "wasm"
       }
     ],
     "publish": [

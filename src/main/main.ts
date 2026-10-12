@@ -127,8 +127,8 @@ function registerIpc() {
   );
   ipcMain.handle('bot:flatten', () => wrap(() => bot.flatten()));
   ipcMain.handle('bot:resetStats', () => wrap(() => bot.resetStats()));
-  ipcMain.handle('bot:hedge:open', (_e, coin: string, side: 'long' | 'short', size: number, venue: BotVenueId) =>
-    wrap(() => bot.openHedge(coin, side, size, venue)),
+  ipcMain.handle('bot:hedge:open', (_e, coin: string, side: 'long' | 'short', size: number, venue: BotVenueId, maker: boolean) =>
+    wrap(() => bot.openHedge(coin, side, size, venue, maker)),
   );
   ipcMain.handle('bot:hedge:close', (_e, id: string) => wrap(() => bot.closeHedge(id)));
 

@@ -3,10 +3,10 @@ import { DEFAULT_BOT_CONFIG, type BotConfig, type BotLogEntry, type BotStatus, t
 import { api, usd } from '../api';
 import { Stat, stateLabel } from './Overview';
 
-const VENUE_LABEL: Record<BotVenueId, string> = { nado: 'Nado', hyperliquid: 'Hyperliquid' };
+const VENUE_LABEL: Record<BotVenueId, string> = { nado: 'Nado', hyperliquid: 'Hyperliquid', lighter: 'Lighter' };
 // Entry-tier fees, used for the cost estimate only.
-const TAKER_BPS: Record<BotVenueId, number> = { nado: 3.5, hyperliquid: 4.5 };
-const MAKER_BPS: Record<BotVenueId, number> = { nado: 1, hyperliquid: 1.5 };
+const TAKER_BPS: Record<BotVenueId, number> = { nado: 3.5, hyperliquid: 4.5, lighter: 0 };
+const MAKER_BPS: Record<BotVenueId, number> = { nado: 1, hyperliquid: 1.5, lighter: 0 };
 
 export function Bot({ status }: { status: BotStatus | null }) {
   const [cfg, setCfg] = useState<BotConfig>(DEFAULT_BOT_CONFIG);
@@ -105,13 +105,18 @@ export function Bot({ status }: { status: BotStatus | null }) {
               </div>
             </label>
             <label>Нога A (фарм поинтов)
-              <select disabled={running} value={cfg.legA} onChange={(e) => { const a = e.target.value as BotVenueId; set('legA', a); set('legB', a === 'nado' ? 'hyperliquid' : 'nado'); }}>
+              <select disabled={running} value={cfg.legA} onChange={(e) => { const a = e.target.value as BotVenueId; set('legA', a); if (cfg.legB === a) set('legB', a === 'nado' ? 'lighter' : 'nado'); }}>
                 <option value="nado">Nado</option>
                 <option value="hyperliquid">Hyperliquid</option>
+                <option value="lighter">Lighter</option>
               </select>
             </label>
             <label>Нога B (хедж)
-              <input disabled value={VENUE_LABEL[cfg.legB]} />
+              <select disabled={running} value={cfg.legB} onChange={(e) => set('legB', e.target.value as BotVenueId)}>
+                {(['lighter', 'hyperliquid', 'nado'] as BotVenueId[]).filter((v) => v !== cfg.legA).map((v) => (
+                  <option key={v} value={v}>{VENUE_LABEL[v]}{v === 'lighter' ? ' — 0% комиссии' : ''}</option>
+                ))}
+              </select>
             </label>
             <label className="wide">Монеты (через запятую)
               <input value={cfg.coins.join(', ')} onChange={(e) => set('coins', e.target.value.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean))} />
@@ -135,6 +140,7 @@ export function Bot({ status }: { status: BotStatus | null }) {
               </div>
             </label>
             {cfg.makerLegA && <Num label="Ждать исполнения мейкера, сек" v={cfg.makerWaitSec} on={(v) => set('makerWaitSec', v)} />}
+            {cfg.makerLegA && <Num label="Перестановок ордера до тейкера" v={cfg.makerRequotes} on={(v) => set('makerRequotes', Math.max(1, Math.round(v)))} />}
             <label className="wide">Направление
               <div className="seg">
                 <button className={cfg.direction === 'funding' ? 'on' : ''} onClick={() => set('direction', 'funding')}>По фандингу (лонг где дешевле)</button>
@@ -194,6 +200,8 @@ function OmniHedge({ status, busy, act }: { status: BotStatus | null; busy: bool
   const [side, setSide] = useState<'long' | 'short'>('long');
   const [size, setSize] = useState(0.002);
   const [venue, setVenue] = useState<BotVenueId>('nado');
+  const [maker, setMaker] = useState(true);
+  const [done, setDone] = useState('');
   const hedges = status?.hedges ?? [];
 
   return (
@@ -206,7 +214,7 @@ function OmniHedge({ status, busy, act }: { status: BotStatus | null; busy: bool
       </p>
       <div className="form inline">
         <label>Монета<input value={coin} onChange={(e) => setCoin(e.target.value.toUpperCase())} /></label>
-        <label>На Omni я открыл
+        <label>Позиция на Omni
           <div className="seg">
             <button className={side === 'long' ? 'on' : ''} onClick={() => setSide('long')}>LONG</button>
             <button className={side === 'short' ? 'on' : ''} onClick={() => setSide('short')}>SHORT</button>
@@ -215,14 +223,31 @@ function OmniHedge({ status, busy, act }: { status: BotStatus | null; busy: bool
         <Num label="Размер (в монетах)" v={size} on={setSize} step={0.001} />
         <label>Хедж на
           <select value={venue} onChange={(e) => setVenue(e.target.value as BotVenueId)}>
-            <option value="nado">Nado</option>
+            <option value="nado">Nado (копятся поинты Nado)</option>
+            <option value="lighter">Lighter (0% комиссии)</option>
             <option value="hyperliquid">Hyperliquid</option>
           </select>
         </label>
-        <button className="btn primary" disabled={busy || !(size > 0)} onClick={() => act(() => api().openHedge(coin, side, size, venue))}>
-          Открыть хедж ({side === 'long' ? 'SHORT' : 'LONG'} {size} {coin})
+        <label>Ордер хеджа
+          <div className="seg">
+            <button className={maker ? 'on' : ''} onClick={() => setMaker(true)}>Мейкер (дешевле)</button>
+            <button className={!maker ? 'on' : ''} onClick={() => setMaker(false)}>Тейкер (мгновенно)</button>
+          </div>
+        </label>
+        <button className="btn primary" disabled={busy || !(size > 0)} onClick={() => act(async () => {
+          setDone('');
+          const st = await api().openHedge(coin, side, size, venue, maker);
+          const h = st.hedges[0];
+          if (h?.status === 'open') setDone(`Хедж готов: ${VENUE_LABEL[venue]} ${h.hedgeSize > 0 ? '+' : ''}${h.hedgeSize} ${coin}. ${maker ? `Теперь открой ${side.toUpperCase()} ${Math.abs(h.hedgeSize)} ${coin} на Omni.` : ''}`);
+        })}>
+          {maker ? 'Шаг 1: поставить хедж' : 'Открыть хедж'} ({side === 'long' ? 'SHORT' : 'LONG'} {size} {coin})
         </button>
       </div>
+      {maker && <p className="small">
+        Самый дешёвый порядок: <b>1)</b> приложение ставит мейкер-ордер на {VENUE_LABEL[venue]} (ждёт исполнения до ~2 мин, остаток добивает тейкером),
+        <b> 2)</b> после «Хедж готов» открываешь позицию на Omni: там исполнение мгновенное. Голой позиции нет ни секунды.
+      </p>}
+      {done && <div className="banner warn">{done}</div>}
       {hedges.length > 0 && (
         <table className="table dense">
           <thead><tr><th>Время</th><th>Omni</th><th>Хедж</th><th className="num">Цена</th><th>Статус</th><th /></tr></thead>
