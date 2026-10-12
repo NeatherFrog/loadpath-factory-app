@@ -38,7 +38,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/NeatherFrog/retrodrop-dashboard.git"
+    "url": "https://github.com/NeatherFrog/loadpath-factory-app.git"
   },
   "build": {
     "appId": "com.neatherfrog.retrodrop",
@@ -61,7 +61,7 @@
       {
         "provider": "github",
         "owner": "NeatherFrog",
-        "repo": "retrodrop-dashboard",
+        "repo": "loadpath-factory-app",
         "releaseType": "release"
       }
     ],

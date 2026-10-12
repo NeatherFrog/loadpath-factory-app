@@ -13,7 +13,7 @@
 
 ## Установка (Windows)
 
-1. Открой [Releases](https://github.com/NeatherFrog/retrodrop-dashboard/releases/latest) и скачай `RetroDrop-Setup-x.y.z.exe`.
+1. Открой [Releases](https://github.com/NeatherFrog/loadpath-factory-app/releases/latest) и скачай `RetroDrop-Setup-x.y.z.exe`.
 2. Запусти. Windows SmartScreen может предупредить о неподписанном приложении: «Подробнее» → «Выполнить в любом случае».
 3. Ярлык появится на рабочем столе.
 
@@ -61,6 +61,8 @@ src/renderer/      React-интерфейс
 src/shared/        общие типы, скоринг, оценка поинтов
 data/projects.json исследование (обновляется без релиза)
 ```
+
+`index.html`, `privacy.html`, `usage.html` и `style.css` в корне — это старые публичные страницы AXIS Video Factory (GitHub Pages). К приложению они не относятся и оставлены, чтобы не сломать ссылку на политику конфиденциальности.
 
 ## Выпуск обновления
 

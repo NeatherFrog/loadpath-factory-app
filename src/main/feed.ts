@@ -6,8 +6,9 @@ import type { ResearchFeed } from '../shared/types';
 // Research data lives in the repo (data/projects.json). Pushing a new version to main
 // updates every installed app within minutes — no new release needed.
 const REMOTE_URLS = [
-  'https://raw.githubusercontent.com/NeatherFrog/retrodrop-dashboard/main/data/projects.json',
   'https://raw.githubusercontent.com/NeatherFrog/loadpath-factory-app/main/data/projects.json',
+  // In case the repository is renamed later.
+  'https://raw.githubusercontent.com/NeatherFrog/retrodrop-dashboard/main/data/projects.json',
 ];
 
 export interface LoadedFeed {
