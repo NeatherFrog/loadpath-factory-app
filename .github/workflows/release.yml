@@ -51,7 +51,20 @@ jobs:
       - if: steps.version.outputs.exists == 'false'
         run: npm ci
       - if: steps.version.outputs.exists == 'false'
-        name: Build and publish installer
-        run: npm run release
+        name: Build installer
+        run: npm run dist
+      # One upload step instead of electron-builder's parallel publishers (they race on release creation).
+      - if: steps.version.outputs.exists == 'false'
+        name: Publish GitHub release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=${{ steps.version.outputs.version }}
+          gh release create "v$V" \
+            "release/RetroDrop-Setup-$V.exe" \
+            "release/RetroDrop-Setup-$V.exe.blockmap" \
+            release/latest.yml \
+            --title "RetroDrop Dashboard v$V" \
+            --notes-file RELEASE_NOTES.md \
+            --target "$GITHUB_SHA"

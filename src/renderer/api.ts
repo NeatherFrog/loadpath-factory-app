@@ -6,6 +6,7 @@ import type {
   BotVenueId,
   CredentialsInput,
   MarketSnapshot,
+  NadoPointsSummary,
   PointsEntry,
   ResearchFeed,
   UpdateStatus,
@@ -30,6 +31,7 @@ export interface Api {
   setCreds(input: CredentialsInput): Promise<VenueCredentialsView>;
   getPoints(): Promise<PointsEntry[]>;
   setPoints(p: PointsEntry[]): Promise<PointsEntry[]>;
+  nadoPoints(address?: string): Promise<NadoPointsSummary>;
   updateStatus(): Promise<UpdateStatus>;
   checkUpdates(): Promise<void>;
   installUpdate(): Promise<void>;

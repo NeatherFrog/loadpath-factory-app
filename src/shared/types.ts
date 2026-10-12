@@ -119,6 +119,8 @@ export interface BotConfig {
   dailyVolumeTargetUsd: number; // stop opening new cycles after this volume (0 = unlimited)
   direction: 'random' | 'funding';
   deltaToleranceUsd: number; // rebalance when |net exposure| exceeds this
+  makerLegA: boolean; // leg A uses post-only limit orders (much cheaper), leg B hedges each fill
+  makerWaitSec: number; // how long a resting order may wait before it is re-quoted
 }
 
 export const DEFAULT_BOT_CONFIG: BotConfig = {
@@ -139,6 +141,8 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
   dailyVolumeTargetUsd: 0,
   direction: 'funding',
   deltaToleranceUsd: 40,
+  makerLegA: true,
+  makerWaitSec: 45,
 };
 
 export type BotState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';
@@ -242,4 +246,11 @@ export interface AppInfo {
   platform: string;
   dataSource: 'remote' | 'cache' | 'bundled';
   dataUpdatedAt: string;
+}
+
+export interface NadoPointsSummary {
+  totalDistributed: number;
+  lastWeekPool: number;
+  myPoints: number | null;
+  epochs: { epoch: number; description: string; start: number; total: number; mine: number }[];
 }

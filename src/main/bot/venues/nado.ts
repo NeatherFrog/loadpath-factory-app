@@ -111,9 +111,67 @@ export class NadoVenue implements Venue {
     // IOC is matched synchronously by the sequencer; the position delta is the filled amount.
     const after = await this.position(coin);
     const filled = Math.abs(after - before);
-    // Fills are never worse than the limit; the touched side is the best estimate of the average.
-    const avgPx = filled > 0 ? ref : 0;
-    return { filledSize: filled, avgPx, feeUsd: filled * avgPx * (m.spec.takerFeeBps / 10_000) };
+    if (filled === 0) return { filledSize: 0, avgPx: 0, feeUsd: 0 };
+    // Exact average price and fee come from the indexer (it lags the sequencer by ~1s).
+    const exact = await this.orderFill(res.data.digest);
+    if (exact) return { filledSize: filled, avgPx: exact.avgPx, feeUsd: exact.feeUsd };
+    return { filledSize: filled, avgPx: ref, feeUsd: filled * ref * (m.spec.takerFeeBps / 10_000) };
+  }
+
+  /** Average fill price and fee of an order, read from the Nado indexer. */
+  private async orderFill(digest: string): Promise<{ avgPx: number; feeUsd: number } | null> {
+    for (let i = 0; i < 6; i++) {
+      try {
+        const [o] = await this.client.context.indexerClient.getOrders({ digests: [digest] });
+        if (o && !o.baseFilled.isZero()) {
+          const base = Math.abs(Number(o.baseFilled.toString()) / X18);
+          const quote = Math.abs(Number(o.quoteFilled.toString()) / X18);
+          const fee = Number(o.totalFee.toString()) / X18;
+          // quoteFilled includes the fee: buys pay base*px + fee, sells receive base*px - fee.
+          const notional = o.baseFilled.isPositive() ? quote - fee : quote + fee;
+          return { avgPx: notional / base, feeUsd: fee };
+        }
+      } catch {
+        // indexer not caught up yet
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    return null;
+  }
+
+  async postOnly(coin: string, size: number, price: number, reduceOnly = false): Promise<string | null> {
+    const m = this.market(coin);
+    const qty = roundToStep(size, m.spec.sizeStep);
+    if (qty === 0) return null;
+    const px = roundPrice(price, m.spec.priceTick, qty > 0 ? 'down' : 'up');
+    try {
+      const res = await this.client.market.placeOrder({
+        productId: m.productId,
+        order: {
+          ...this.subaccount(),
+          price: px,
+          amount: addDecimals(qty.toString()),
+          expiration: Math.floor(Date.now() / 1000) + 600,
+          appendix: packOrderAppendix({ orderExecutionType: 'post_only', reduceOnly }),
+        },
+        nonce: getOrderNonce(),
+      });
+      return res.status === 'success' ? res.data.digest : null;
+    } catch (err) {
+      // Post-only orders that would cross the book are rejected by the engine.
+      if (/post.?only|cross/i.test(String(err))) return null;
+      throw err;
+    }
+  }
+
+  async cancel(coin: string, orderId: string) {
+    const m = this.market(coin);
+    try {
+      await this.client.market.cancelOrders({ ...this.subaccount(), productIds: [m.productId], digests: [orderId] });
+    } catch (err) {
+      // Already filled or expired — nothing to cancel.
+      if (!/not found|does not exist|unknown order/i.test(String(err))) throw err;
+    }
   }
 }
 

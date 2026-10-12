@@ -2,7 +2,7 @@
 
 - Electron + React (Vite) + TypeScript desktop app. Main process bundled by esbuild (`scripts/build.mjs`), renderer by Vite.
 - All npm packages are devDependencies on purpose: everything is bundled, so the installer ships no node_modules.
-- **Shipping an update to the user** = bump `version` in `package.json` and push to `main`. `.github/workflows/release.yml` builds the Windows installer and publishes a GitHub Release; electron-updater in the app installs it. Without a version bump nothing is released.
+- **Shipping an update to the user** = bump `version` in `package.json`, rewrite `RELEASE_NOTES.md` (shown on the GitHub release), push to `main`. `.github/workflows/release.yml` builds the Windows installer and publishes a GitHub Release; electron-updater in the app installs it. Without a version bump nothing is released.
 - **Research data** (`data/projects.json`) is fetched by the app from `main` on GitHub — bump its `version` field when editing so caches refresh. No app release needed.
 - Before pushing: `npm run typecheck && npm test && npm run build`.
 - Bot safety rules live in `src/main/bot/engine.ts` (hedge exactly the filled size, unwind on failed hedge, delta checks, daily loss limit). Keep them covered by `tests/engine.test.ts`.

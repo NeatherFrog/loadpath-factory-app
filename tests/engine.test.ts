@@ -12,7 +12,7 @@ class FakeVenue implements Venue {
   constructor(readonly id: BotVenueId, readonly label: string, private px = 100, private fee = 4) {}
   async init() {}
   hasMarket(coin: string) { return coin === 'ETH'; }
-  spec(): MarketSpec { return { sizeStep: 0.01, priceTick: 0.01, minNotionalUsd: 10, takerFeeBps: this.fee }; }
+  spec(): MarketSpec { return { sizeStep: 0.01, priceTick: 0.01, minNotionalUsd: 10, takerFeeBps: this.fee, makerFeeBps: 1 }; }
   async book(): Promise<Book> { return { bid: this.px - 0.01, ask: this.px + 0.01, ts: Date.now() }; }
   async position(coin: string) { return this.pos.get(coin) ?? 0; }
   async equityUsd() { return 1000; }
@@ -29,12 +29,42 @@ class FakeVenue implements Venue {
   }
 }
 
+/** Venue with post-only support: each resting order fills `makerFillFrac` of its size on the next position() read. */
+class MakerVenue extends FakeVenue {
+  makerFillFrac: number[] = [];
+  resting = new Map<string, { coin: string; size: number }>();
+  posted: { size: number; price: number; reduceOnly: boolean }[] = [];
+  cancels = 0;
+  private n = 0;
+  override async position(coin: string) {
+    for (const [id, o] of this.resting) {
+      const frac = this.makerFillFrac.length ? this.makerFillFrac.shift()! : 1;
+      if (frac === 0) continue;
+      const q = Math.round(o.size * frac * 100) / 100;
+      this.pos.set(coin, Math.round(((this.pos.get(coin) ?? 0) + q) * 100) / 100);
+      o.size = Math.round((o.size - q) * 100) / 100;
+      if (o.size === 0) this.resting.delete(id);
+    }
+    return super.position(coin);
+  }
+  async postOnly(coin: string, size: number, price: number, reduceOnly = false) {
+    this.posted.push({ size, price, reduceOnly });
+    const id = String(++this.n);
+    this.resting.set(id, { coin, size });
+    return id;
+  }
+  async cancel(_coin: string, id: string) {
+    this.cancels++;
+    this.resting.delete(id);
+  }
+}
+
 const cfg: BotConfig = {
   ...DEFAULT_BOT_CONFIG,
   coins: ['ETH'],
   notionalMinUsd: 200, notionalMaxUsd: 200,
   holdMinMinutes: 0, holdMaxMinutes: 0, pauseMinMinutes: 0, pauseMaxMinutes: 0,
-  maxEntrySpreadBps: 10, dailyVolumeTargetUsd: 1000,
+  maxEntrySpreadBps: 10, dailyVolumeTargetUsd: 1000, makerWaitSec: 0.001,
 };
 
 function makeEngine(a: FakeVenue, b: FakeVenue, over: Partial<BotConfig> = {}) {
@@ -147,5 +177,34 @@ describe('DeltaNeutralEngine', () => {
     await engine.flattenAll();
     expect(a.pos.get('ETH')).toBe(0);
     expect(engine.status().hedges[0].status).toBe('closed');
+  });
+
+  it('maker mode: rests post-only on leg A, hedges every partial fill on B, ends flat', async () => {
+    const a = new MakerVenue('nado', 'A');
+    const b = new FakeVenue('hyperliquid', 'B');
+    a.makerFillFrac = [0.5, 1]; // the opening order fills in two pieces
+    const { engine } = makeEngine(a, b, { dailyVolumeTargetUsd: 300 });
+    await runUntilStopped(engine);
+    expect(engine.status().state).toBe('stopped');
+    expect(a.posted.length).toBeGreaterThan(0);
+    // first maker fill (half) was hedged before the second one arrived
+    expect(Math.abs(b.orders[0].size)).toBeCloseTo(Math.abs(a.posted[0].size) / 2, 5);
+    expect(a.pos.get('ETH')).toBe(0);
+    expect(b.pos.get('ETH')).toBe(0);
+    // maker fees (1 bp) are far below the taker test above
+    expect(engine.status().stats.perVenue.nado!.feesUsd).toBeLessThan(0.1);
+  });
+
+  it('maker mode: skips the cycle and cancels when nothing fills', async () => {
+    const a = new MakerVenue('nado', 'A');
+    const b = new FakeVenue('hyperliquid', 'B');
+    a.makerFillFrac = new Array(1_000_000).fill(0);
+    const { engine } = makeEngine(a, b, { dailyVolumeTargetUsd: 1 });
+    await engine.start();
+    await new Promise((r) => setTimeout(r, 30));
+    await engine.stop();
+    expect(a.cancels).toBeGreaterThan(0);
+    expect(b.orders.length).toBe(0);
+    expect(a.pos.get('ETH') ?? 0).toBe(0);
   });
 });

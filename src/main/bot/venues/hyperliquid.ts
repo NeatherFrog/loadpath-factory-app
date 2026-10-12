@@ -103,4 +103,41 @@ export class HyperliquidVenue implements Venue {
       throw err;
     }
   }
+
+  async postOnly(coin: string, size: number, price: number, reduceOnly = false): Promise<string | null> {
+    const m = this.market(coin);
+    const qty = roundToStep(size, m.spec.sizeStep);
+    if (qty === 0) return null;
+    try {
+      const res = await this.exchange.order({
+        orders: [
+          {
+            a: m.asset,
+            b: qty > 0,
+            p: hlPrice(price, m.szDecimals),
+            s: Math.abs(qty).toFixed(m.szDecimals),
+            r: reduceOnly,
+            t: { limit: { tif: 'Alo' } },
+          },
+        ],
+        grouping: 'na',
+      });
+      const status = res.response.data.statuses[0];
+      if (typeof status === 'object' && 'resting' in status) return String(status.resting.oid);
+      return null;
+    } catch (err) {
+      // "Post only order would have immediately matched"
+      if (/post only|immediately match/i.test(String(err))) return null;
+      throw err;
+    }
+  }
+
+  async cancel(coin: string, orderId: string) {
+    const m = this.market(coin);
+    try {
+      await this.exchange.cancel({ cancels: [{ a: m.asset, o: Number(orderId) }] });
+    } catch (err) {
+      if (!/already canceled|filled|never placed/i.test(String(err))) throw err;
+    }
+  }
 }

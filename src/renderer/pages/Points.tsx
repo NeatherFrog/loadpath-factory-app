@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { BotStatus, PointsEntry, ResearchFeed } from '../../shared/types';
+import type { BotStatus, NadoPointsSummary, PointsEntry, ResearchFeed } from '../../shared/types';
 import { valuePoints } from '../../shared/points';
 import { api, compact, usd } from '../api';
 import { Num } from './Bot';
@@ -23,6 +23,26 @@ export function Points({ feed, bot }: { feed: ResearchFeed | null; bot: BotStatu
   const [entries, setEntries] = useState<PointsEntry[]>([]);
   const [dirty, setDirty] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [nado, setNado] = useState<NadoPointsSummary | null>(null);
+  const [nadoErr, setNadoErr] = useState('');
+
+  const pullNado = async () => {
+    try {
+      const r = await api().nadoPoints();
+      setNado(r);
+      setNadoErr('');
+      setEntries((es) =>
+        es.map((e) =>
+          e.projectId === 'nado'
+            ? { ...e, totalPoints: Math.round(r.totalDistributed), ...(r.myPoints !== null ? { myPoints: Math.round(r.myPoints * 100) / 100 } : {}) }
+            : e,
+        ),
+      );
+      setDirty(true);
+    } catch (err) {
+      setNadoErr(String(err));
+    }
+  };
 
   useEffect(() => {
     void api().getPoints().then((p) => {
@@ -78,6 +98,18 @@ export function Points({ feed, bot }: { feed: ResearchFeed | null; bot: BotStatu
                 {v.verdict === 'sell' ? 'OTC-оффер выгоден — можно продавать' : v.verdict === 'hold' ? 'Оффер дешёвый — держать до TGE' : v.verdict === 'neutral' ? 'Оффер около справедливой цены' : 'Введи данные'}
               </span>
             </div>
+            {p.id === 'nado' && (
+              <div className="row-inline">
+                <button className="btn small-btn" onClick={pullNado}>⟳ Подтянуть с Nado</button>
+                {nado && (
+                  <span className="muted small">
+                    Роздано всего {Math.round(nado.totalDistributed).toLocaleString('ru')} · пул прошлой недели {Math.round(nado.lastWeekPool).toLocaleString('ru')}
+                    {nado.myPoints !== null ? ` · мои ${nado.myPoints.toLocaleString('ru')}` : ' · добавь адрес Nado в Настройках, чтобы видеть свои'}
+                  </span>
+                )}
+                {nadoErr && <span className="bad small">{nadoErr}</span>}
+              </div>
+            )}
             {e.totalPoints === 0 && <p className="muted small">Публичной модели нет: впиши своё число поинтов (видно в приложении проекта) и сценарии FDV.</p>}
             <div className="form cols-5">
               <Num label="Мои поинты" v={e.myPoints} on={(x) => update(e.projectId, { myPoints: x })} />

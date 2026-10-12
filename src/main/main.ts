@@ -5,6 +5,7 @@ import type { AppInfo, BotConfig, BotVenueId, CredentialsInput, PointsEntry, Upd
 import { Store } from './store';
 import { loadFeed, type LoadedFeed } from './feed';
 import { fetchMarketSnapshot } from './markets';
+import { fetchNadoPoints } from './data/nadoPublic';
 import { setupUpdater } from './updater';
 import { BotManager } from './botManager';
 
@@ -146,6 +147,9 @@ function registerIpc() {
     }),
   );
 
+  ipcMain.handle('points:nado', (_e, address?: string) =>
+    wrap(() => fetchNadoPoints(address || realStore.credentialsView().nado.address || undefined)),
+  );
   ipcMain.handle('update:get', () => wrap(() => updater.get()));
   ipcMain.handle('update:check', () => wrap(() => updater.check()));
   ipcMain.handle('update:install', () => wrap(() => updater.install()));

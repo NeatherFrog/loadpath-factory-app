@@ -17,6 +17,8 @@ export class PaperVenue implements Venue {
   private specs = new Map<string, MarketSpec>();
   private positions = new Map<string, number>();
   private cash = 0;
+  private resting = new Map<string, { coin: string; size: number; price: number }>();
+  private seq = 0;
 
   constructor(
     readonly id: BotVenueId,
@@ -49,7 +51,37 @@ export class PaperVenue implements Venue {
   }
 
   async position(coin: string) {
+    await this.settleMakers(coin);
     return this.positions.get(coin) ?? 0;
+  }
+
+  /** Resting post-only orders fill once the opposite side of the book trades through their price. */
+  private async settleMakers(coin: string) {
+    const orders = [...this.resting].filter(([, o]) => o.coin === coin);
+    if (!orders.length) return;
+    const b = await this.source.book(coin);
+    const spec = this.spec(coin);
+    for (const [id, o] of orders) {
+      const crossed = o.size > 0 ? b.ask <= o.price : b.bid >= o.price;
+      if (!crossed) continue;
+      this.resting.delete(id);
+      const cur = this.positions.get(coin) ?? 0;
+      this.positions.set(coin, Number((cur + o.size).toFixed(10)));
+      this.cash -= o.size * o.price + Math.abs(o.size) * o.price * (spec.makerFeeBps / 10_000);
+    }
+  }
+
+  async postOnly(coin: string, size: number, price: number): Promise<string | null> {
+    const spec = this.spec(coin);
+    const b = await this.source.book(coin);
+    if ((size > 0 && price >= b.ask) || (size < 0 && price <= b.bid)) return null;
+    const id = `p${++this.seq}`;
+    this.resting.set(id, { coin, size: roundToStep(size, spec.sizeStep), price });
+    return id;
+  }
+
+  async cancel(_coin: string, orderId: string) {
+    this.resting.delete(orderId);
   }
 
   async equityUsd() {

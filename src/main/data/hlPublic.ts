@@ -42,6 +42,7 @@ export async function fetchHlMeta(): Promise<{ markets: Map<string, HlMarket>; c
         priceTick: 10 ** -(6 - u.szDecimals),
         minNotionalUsd: 10,
         takerFeeBps: 4.5,
+        makerFeeBps: 1.5,
       },
     });
     const c = ctxs[asset];

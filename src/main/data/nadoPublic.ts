@@ -1,5 +1,6 @@
 import { getJson, postJson } from './http';
 import type { Book, MarketSpec } from '../bot/venue';
+import type { NadoPointsSummary } from '../../shared/types';
 
 const BASE = 'https://api.prod.nado.xyz';
 const X18 = 1e18;
@@ -24,6 +25,7 @@ interface SymbolsResponse {
         size_increment: string;
         min_size: string;
         taker_fee_rate_x18: string;
+        maker_fee_rate_x18: string;
         trading_status: string;
       }
     >;
@@ -56,6 +58,7 @@ export async function fetchNadoMarkets(): Promise<Map<string, NadoMarket>> {
         sizeStep: Number(s.size_increment) / X18,
         minNotionalUsd: Number(s.min_size) / X18,
         takerFeeBps: (Number(s.taker_fee_rate_x18) / X18) * 10_000,
+        makerFeeBps: (Number(s.maker_fee_rate_x18) / X18) * 10_000,
       },
     });
   }
@@ -85,4 +88,26 @@ export async function fetchNadoMarketPrices(productIds: number[]): Promise<Map<n
     out.set(p.product_id, { bid: Number(p.bid_x18) / X18, ask: Number(p.ask_x18) / X18, ts: Date.now() });
   }
   return out;
+}
+
+/** Public rewards endpoint: points per weekly epoch (protocol total and, for an address, own points). */
+export async function fetchNadoPoints(address?: string): Promise<NadoPointsSummary> {
+  const r = await postJson<{
+    points_per_epoch: { epoch: number; description: string; start_time: string; total_points: string; points: string }[];
+    all_time_points: { points: string };
+  }>(`${BASE}/rewards/v1`, { nado_points: { address: address || '0x0000000000000000000000000000000000000001' } });
+  const epochs = r.points_per_epoch.map((e) => ({
+    epoch: e.epoch,
+    description: e.description,
+    start: Number(e.start_time) * 1000,
+    total: Number(e.total_points) / X18,
+    mine: Number(e.points) / X18,
+  }));
+  const finished = epochs.filter((e) => e.total > 0);
+  return {
+    totalDistributed: epochs.reduce((sum, e) => sum + e.total, 0),
+    lastWeekPool: finished.length ? finished[finished.length - 1].total : 0,
+    myPoints: address ? Number(r.all_time_points.points) / X18 : null,
+    epochs,
+  };
 }

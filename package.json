@@ -1,7 +1,7 @@
 {
   "name": "retrodrop-dashboard",
   "productName": "RetroDrop Dashboard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Airdrop research dashboard and delta-neutral points farming bot for perp DEXes",
   "author": "NeatherFrog",
   "license": "UNLICENSED",

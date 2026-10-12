@@ -32,6 +32,7 @@ const api = {
   setCreds: (input: unknown) => call('creds:set', input),
   getPoints: () => call('points:get'),
   setPoints: (p: unknown) => call('points:set', p),
+  nadoPoints: (address?: string) => call('points:nado', address),
   updateStatus: () => call('update:get'),
   checkUpdates: () => call('update:check'),
   installUpdate: () => call('update:install'),

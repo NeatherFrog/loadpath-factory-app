@@ -11,6 +11,7 @@ export interface MarketSpec {
   priceTick: number;
   minNotionalUsd: number;
   takerFeeBps: number;
+  makerFeeBps: number;
 }
 
 export interface Fill {
@@ -38,4 +39,10 @@ export interface Venue {
   ioc(coin: string, size: number, slippageBps: number, reduceOnly?: boolean): Promise<Fill>;
   /** Annualized funding (decimal), positive = longs pay. */
   fundingApr(coin: string): Promise<number | null>;
+  /**
+   * Optional maker support: rests a post-only limit order. Returns an order id, or null when
+   * the price would have crossed the book (post-only rejected).
+   */
+  postOnly?(coin: string, size: number, price: number, reduceOnly?: boolean): Promise<string | null>;
+  cancel?(coin: string, orderId: string): Promise<void>;
 }

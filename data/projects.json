@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "updatedAt": "2026-10-12",
   "marketNote": "Октябрь 2026: по открытому интересу лидирует Hyperliquid (~$12B OI), Lighter и Aster уже раздали токены. Из крупных перпов без токена с живой программой поинтов остались Variational (TGE в Q4 2026), Nado (Season 2), Extended (поинты почти закончились), Pacifica, StandX и Ondo Perps. Для фарма ботом важен торговый API, поэтому выбраны Variational как главный дроп и Nado как автоматизируемая нога.",
   "projects": [
@@ -29,16 +29,49 @@
         "Дата TGE уже сдвигалась (Q3 → Q4)"
       ],
       "verdict": "Главный кандидат: сильная команда, Tier-1 инвесторы, огромные объёмы, понятная токеномика и близкий TGE. Есть ликвидный OTC-рынок поинтов (в районе $20). Фарм дешёвый, потому что комиссий нет. Стратегия: открываем позицию на Omni и хеджируем её на Nado, где заодно копятся поинты Nado.",
-      "scores": { "team": 9, "funding": 9, "traction": 9, "tokenUpside": 8, "pointsAccess": 5, "automation": 3, "farmCost": 9, "risk": 6 },
+      "scores": {
+        "team": 9,
+        "funding": 9,
+        "traction": 9,
+        "tokenUpside": 8,
+        "pointsAccess": 5,
+        "automation": 3,
+        "farmCost": 9,
+        "risk": 6
+      },
       "links": [
-        { "label": "Omni", "url": "https://omni.variational.io" },
-        { "label": "Docs", "url": "https://docs.variational.io" },
-        { "label": "Points", "url": "https://docs.variational.io/omni/rewards/points" },
-        { "label": "$VAR", "url": "https://docs.variational.io/token/usdvar" },
-        { "label": "X", "url": "https://x.com/variational_io" },
-        { "label": "Series A (Fortune)", "url": "https://fortune.com/2026/05/20/variational-raises-50-million-series-a/" }
+        {
+          "label": "Omni",
+          "url": "https://omni.variational.io"
+        },
+        {
+          "label": "Docs",
+          "url": "https://docs.variational.io"
+        },
+        {
+          "label": "Points",
+          "url": "https://docs.variational.io/omni/rewards/points"
+        },
+        {
+          "label": "$VAR",
+          "url": "https://docs.variational.io/token/usdvar"
+        },
+        {
+          "label": "X",
+          "url": "https://x.com/variational_io"
+        },
+        {
+          "label": "Series A (Fortune)",
+          "url": "https://fortune.com/2026/05/20/variational-raises-50-million-series-a/"
+        }
       ],
-      "pointsModel": { "totalPointsEstimate": 10500000, "airdropPct": 32, "fdvBear": 500000000, "fdvBase": 1000000000, "fdvBull": 1600000000 }
+      "pointsModel": {
+        "totalPointsEstimate": 10500000,
+        "airdropPct": 32,
+        "fdvBear": 500000000,
+        "fdvBase": 1000000000,
+        "fdvBull": 1600000000
+      }
     },
     {
       "id": "nado",
@@ -50,11 +83,11 @@
       "summary": "CLOB-биржа со спотом, перпами и money markets на unified margin. Строится на Ink, SDK поддерживает Ink Foundation (Kraken). Задержка 5–15 мс; есть акции, сырьё и FX.",
       "team": "Ink Foundation / экосистема Kraken (SDK публикует inkfnd.com). Это бренд, а не анонимы.",
       "funding": "Бэкинг Kraken / Ink Foundation. Отдельный раунд публично не раскрыт.",
-      "traction": "~$140–255M объёма за 24ч, ~75 перп-рынков, OI ~$90M (по публичному API Nado).",
-      "points": "Season 2 идёт с 21.05.2026. Недельный пул зависит от объёма протокола: от 300k (пол) до 950k (потолок). Доля считается от активности с поправкой на fee tier и «toxicity». Балансы S1 перенесены. Поинты нельзя передать или продать.",
+      "traction": "~$140–255M объёма за 24ч, ~75 перп-рынков, OI ~$90M (публичный API Nado).",
+      "points": "Season 2 идёт с 21.05.2026. Пул недели зависит от объёма протокола: от 300k до 950k. Сейчас он ~340k, почти на минимуме, потому что объём низкий. Всего роздано ~31.5M поинтов за 40 недельных эпох (публичный rewards API). Доля считается от активности с поправками на fee tier и «toxicity». Поинты непередаваемые.",
       "token": "Своего токена нет. Торговля на Nado также засчитывается в путь к airdrop $INK (Ink Chain); дата и аллокация не объявлены.",
       "tgeEstimate": "не объявлен",
-      "weeklyPoints": "300k–950k / неделю",
+      "weeklyPoints": "~340k / неделю (диапазон 300k–950k)",
       "fees": "Тейкер 3.5 bps, мейкер 1 bp на входном тире; со скидками до 1.5 bps тейкер и −0.8 bps мейкер. Тиры сбрасываются каждый месяц.",
       "api": "Отличный: официальные SDK на TypeScript, Python и Rust, REST, WebSocket и linked signers. Linked signer — отдельный торговый ключ, который можно отозвать. Бот торгует Nado полностью автоматически.",
       "risks": [
@@ -63,15 +96,46 @@
         "Поинты непередаваемые: OTC возможен только как сделка по будущему токену",
         "Ликвидность ниже, чем у Hyperliquid; на альтах спред шире"
       ],
-      "verdict": "Второй выбор и основа автоматизации. API позволяет боту фармить объём 24/7. Сезон относительно свежий, а за проектом стоит Kraken. Это нога «A» в паре Nado ⇄ Hyperliquid и хедж-нога для ручных сделок на Omni.",
-      "scores": { "team": 8, "funding": 8, "traction": 5, "tokenUpside": 7, "pointsAccess": 7, "automation": 10, "farmCost": 6, "risk": 6 },
+      "verdict": "Второй выбор и основа автоматизации: только здесь API позволяет боту фармить объём 24/7, а за проектом стоит Kraken. ⚠️ Экономика: в тейкер-режиме (3.5 + 4.5 bps) поинт обходится примерно в $3–4, а при допущениях FDV $300M / 10% на эирдроп / ~36M поинтов он стоит около $0.8. Поэтому бот по умолчанию ставит мейкер-ордера (1 bp), а самая дешёвая связка — ручная сделка на Omni (0%) с мейкер-хеджем на Nado: поинты капают на обеих биржах.",
+      "scores": {
+        "team": 8,
+        "funding": 8,
+        "traction": 5,
+        "tokenUpside": 7,
+        "pointsAccess": 7,
+        "automation": 10,
+        "farmCost": 6,
+        "risk": 6
+      },
       "links": [
-        { "label": "App", "url": "https://app.nado.xyz" },
-        { "label": "Docs", "url": "https://docs.nado.xyz" },
-        { "label": "Season 2", "url": "https://docs.nado.xyz/incentives-and-rewards/points/season-2-live" },
-        { "label": "Linked signers", "url": "https://docs.nado.xyz/developer-resources/get-started/linked-signers" },
-        { "label": "X", "url": "https://x.com/nadoHQ" }
-      ]
+        {
+          "label": "App",
+          "url": "https://app.nado.xyz"
+        },
+        {
+          "label": "Docs",
+          "url": "https://docs.nado.xyz"
+        },
+        {
+          "label": "Season 2",
+          "url": "https://docs.nado.xyz/incentives-and-rewards/points/season-2-live"
+        },
+        {
+          "label": "Linked signers",
+          "url": "https://docs.nado.xyz/developer-resources/get-started/linked-signers"
+        },
+        {
+          "label": "X",
+          "url": "https://x.com/nadoHQ"
+        }
+      ],
+      "pointsModel": {
+        "totalPointsEstimate": 36000000,
+        "airdropPct": 10,
+        "fdvBear": 150000000,
+        "fdvBase": 300000000,
+        "fdvBull": 600000000
+      }
     },
     {
       "id": "extended",
@@ -90,14 +154,38 @@
       "weeklyPoints": "до 600k (почти исчерпано)",
       "fees": "0.02% / 0.05%",
       "api": "Хороший: официальный Python SDK (x10-python-trading-starknet), Stark-подписи.",
-      "risks": ["Почти весь пул поинтов роздан, поэтому новому фармеру ловить нечего", "Чистка поинтов за абуз уже проводилась"],
-      "verdict": "Заходить в фарм сейчас поздно. Стоит наблюдать за TGE; возможна покупка поинтов на OTC с дисконтом.",
-      "scores": { "team": 7, "funding": 5, "traction": 5, "tokenUpside": 6, "pointsAccess": 1, "automation": 9, "farmCost": 5, "risk": 6 },
-      "links": [
-        { "label": "App", "url": "https://app.extended.exchange" },
-        { "label": "API docs", "url": "https://api.docs.extended.exchange" }
+      "risks": [
+        "Почти весь пул поинтов роздан, поэтому новому фармеру ловить нечего",
+        "Чистка поинтов за абуз уже проводилась"
       ],
-      "pointsModel": { "totalPointsEstimate": 70000000, "airdropPct": 30, "fdvBear": 200000000, "fdvBase": 400000000, "fdvBull": 800000000 }
+      "verdict": "Заходить в фарм сейчас поздно. Стоит наблюдать за TGE; возможна покупка поинтов на OTC с дисконтом.",
+      "scores": {
+        "team": 7,
+        "funding": 5,
+        "traction": 5,
+        "tokenUpside": 6,
+        "pointsAccess": 1,
+        "automation": 9,
+        "farmCost": 5,
+        "risk": 6
+      },
+      "links": [
+        {
+          "label": "App",
+          "url": "https://app.extended.exchange"
+        },
+        {
+          "label": "API docs",
+          "url": "https://api.docs.extended.exchange"
+        }
+      ],
+      "pointsModel": {
+        "totalPointsEstimate": 70000000,
+        "airdropPct": 30,
+        "fdvBear": 200000000,
+        "fdvBase": 400000000,
+        "fdvBull": 800000000
+      }
     },
     {
       "id": "pacifica",
@@ -114,10 +202,28 @@
       "tgeEstimate": "не объявлен",
       "fees": "0.02% / 0.05%",
       "api": "Есть REST/WS API с Ed25519-подписями, Python SDK и agent keys.",
-      "risks": ["Фарм идёт больше года, поэтому allocation размыт", "Нет VC и публичной команды", "Не подтверждено, что поинты превратятся в токен"],
+      "risks": [
+        "Фарм идёт больше года, поэтому allocation размыт",
+        "Нет VC и публичной команды",
+        "Не подтверждено, что поинты превратятся в токен"
+      ],
       "verdict": "Резервный кандидат №3. Адаптер под Solana можно добавить следующей обновой, если Variational и Nado не оправдают ожиданий.",
-      "scores": { "team": 5, "funding": 4, "traction": 5, "tokenUpside": 6, "pointsAccess": 5, "automation": 8, "farmCost": 5, "risk": 5 },
-      "links": [{ "label": "App", "url": "https://app.pacifica.fi" }]
+      "scores": {
+        "team": 5,
+        "funding": 4,
+        "traction": 5,
+        "tokenUpside": 6,
+        "pointsAccess": 5,
+        "automation": 8,
+        "farmCost": 5,
+        "risk": 5
+      },
+      "links": [
+        {
+          "label": "App",
+          "url": "https://app.pacifica.fi"
+        }
+      ]
     },
     {
       "id": "ondo-perps",
@@ -133,10 +239,28 @@
       "token": "ONDO уже торгуется. Конвертация поинтов в ONDO не подтверждена.",
       "fees": "н/д",
       "api": "Публичной документации торгового API не нашли; подключение возможно через Tread.",
-      "risks": ["Недоступно для США", "Не DEX в строгом смысле (off-chain)", "Ценность поинтов не определена"],
+      "risks": [
+        "Недоступно для США",
+        "Не DEX в строгом смысле (off-chain)",
+        "Ценность поинтов не определена"
+      ],
       "verdict": "Интересная свежая программа, но без понятного API и без апсайда нового токена. Пока наблюдаем.",
-      "scores": { "team": 8, "funding": 9, "traction": 3, "tokenUpside": 4, "pointsAccess": 8, "automation": 3, "farmCost": 5, "risk": 5 },
-      "links": [{ "label": "App", "url": "https://app.ondoperps.xyz" }]
+      "scores": {
+        "team": 8,
+        "funding": 9,
+        "traction": 3,
+        "tokenUpside": 4,
+        "pointsAccess": 8,
+        "automation": 3,
+        "farmCost": 5,
+        "risk": 5
+      },
+      "links": [
+        {
+          "label": "App",
+          "url": "https://app.ondoperps.xyz"
+        }
+      ]
     },
     {
       "id": "lighter",
@@ -152,10 +276,27 @@
       "token": "LIT запущен; 30.12.2025 раздали 25% supply. Ещё ~25% зарезервировано под будущие награды.",
       "fees": "0% для стандартных аккаунтов",
       "api": "API и Python SDK есть; подписание через Go-библиотеку (в Node.js нужна обёртка).",
-      "risks": ["Главный дроп уже прошёл", "Новые поинты без гарантий"],
+      "risks": [
+        "Главный дроп уже прошёл",
+        "Новые поинты без гарантий"
+      ],
       "verdict": "Основной дроп упущен. Lighter полезен как бесплатная хедж-нога; адаптер можно добавить в будущей версии.",
-      "scores": { "team": 9, "funding": 8, "traction": 9, "tokenUpside": 3, "pointsAccess": 4, "automation": 6, "farmCost": 10, "risk": 7 },
-      "links": [{ "label": "App", "url": "https://app.lighter.xyz" }]
+      "scores": {
+        "team": 9,
+        "funding": 8,
+        "traction": 9,
+        "tokenUpside": 3,
+        "pointsAccess": 4,
+        "automation": 6,
+        "farmCost": 10,
+        "risk": 7
+      },
+      "links": [
+        {
+          "label": "App",
+          "url": "https://app.lighter.xyz"
+        }
+      ]
     },
     {
       "id": "standx",
@@ -171,9 +312,21 @@
       "token": "Нет.",
       "fees": "0.01% / 0.04%",
       "api": "н/д",
-      "risks": ["Объём при маленьком OI похож на фарм", "Мало публичной информации"],
+      "risks": [
+        "Объём при маленьком OI похож на фарм",
+        "Мало публичной информации"
+      ],
       "verdict": "B-tier: подходит мейкерским стратегиям; тейкер-фарм здесь неэффективен.",
-      "scores": { "team": 4, "funding": 4, "traction": 5, "tokenUpside": 6, "pointsAccess": 6, "automation": 5, "farmCost": 6, "risk": 4 },
+      "scores": {
+        "team": 4,
+        "funding": 4,
+        "traction": 5,
+        "tokenUpside": 6,
+        "pointsAccess": 6,
+        "automation": 5,
+        "farmCost": 6,
+        "risk": 4
+      },
       "links": []
     },
     {
@@ -190,10 +343,27 @@
       "token": "DIME: genesis airdrop 05.03.2026, 25% supply.",
       "fees": "0% / 0%",
       "api": "Хороший API.",
-      "risks": ["Основной дроп прошёл", "Объёмы сильно упали"],
+      "risks": [
+        "Основной дроп прошёл",
+        "Объёмы сильно упали"
+      ],
       "verdict": "Пропускаем.",
-      "scores": { "team": 8, "funding": 8, "traction": 2, "tokenUpside": 2, "pointsAccess": 4, "automation": 8, "farmCost": 9, "risk": 7 },
-      "links": [{ "label": "App", "url": "https://app.paradex.trade" }]
+      "scores": {
+        "team": 8,
+        "funding": 8,
+        "traction": 2,
+        "tokenUpside": 2,
+        "pointsAccess": 4,
+        "automation": 8,
+        "farmCost": 9,
+        "risk": 7
+      },
+      "links": [
+        {
+          "label": "App",
+          "url": "https://app.paradex.trade"
+        }
+      ]
     }
   ],
   "otcVenues": [
@@ -217,18 +387,61 @@
     }
   ],
   "sources": [
-    { "label": "perps.info — рейтинг перп-DEX (11.10.2026)", "url": "https://perps.info/" },
-    { "label": "Variational: $VAR tokenomics", "url": "https://docs.variational.io/token/usdvar" },
-    { "label": "Variational: Points", "url": "https://docs.variational.io/omni/rewards/points" },
-    { "label": "KuCoin: Variational TGE Q4 2026, 32% airdrop", "url": "https://www.kucoin.com/news/flash/variational-announces-var-token-tge-in-q4-2026-with-32-genesis-airdrop" },
-    { "label": "Fortune: Variational $50M Series A", "url": "https://fortune.com/2026/05/20/variational-raises-50-million-series-a/" },
-    { "label": "Nado: Season 2", "url": "https://docs.nado.xyz/incentives-and-rewards/points/season-2-live" },
-    { "label": "Nado: Fees", "url": "https://docs.nado.xyz/core/fees-and-rebates" },
-    { "label": "Extended points cap (airdropalert)", "url": "https://airdropalert.com/airdrops/extended-exchange-points-program/" },
-    { "label": "Lighter LIT airdrop (beincrypto)", "url": "https://beincrypto.com/lighter-launches-lit-token-defi-infrastructure/" },
-    { "label": "Paradex DIME TGE (decrypt)", "url": "https://decrypt.co/356482/paradex-confirms-dime-tge-timeline-and-expands-airdrop-allocation-following-xp-season-2-conclusion" },
-    { "label": "Ondo Perps points (odaily)", "url": "https://www.odaily.news/en/newsflash/503094" },
-    { "label": "Whales Market: points OTC", "url": "https://www.gate.com/learn/articles/whales-market-points-otc-marketplace/2399" },
-    { "label": "Pacifica airdrop guide (MEXC)", "url": "https://blog.mexc.com/pacifica-airdrop-guide-2026-how-to-farm-points-on-solanas-1-perp-dex-before-the-tge/" }
+    {
+      "label": "perps.info — рейтинг перп-DEX (11.10.2026)",
+      "url": "https://perps.info/"
+    },
+    {
+      "label": "Variational: $VAR tokenomics",
+      "url": "https://docs.variational.io/token/usdvar"
+    },
+    {
+      "label": "Variational: Points",
+      "url": "https://docs.variational.io/omni/rewards/points"
+    },
+    {
+      "label": "KuCoin: Variational TGE Q4 2026, 32% airdrop",
+      "url": "https://www.kucoin.com/news/flash/variational-announces-var-token-tge-in-q4-2026-with-32-genesis-airdrop"
+    },
+    {
+      "label": "Fortune: Variational $50M Series A",
+      "url": "https://fortune.com/2026/05/20/variational-raises-50-million-series-a/"
+    },
+    {
+      "label": "Nado: Season 2",
+      "url": "https://docs.nado.xyz/incentives-and-rewards/points/season-2-live"
+    },
+    {
+      "label": "Nado: Fees",
+      "url": "https://docs.nado.xyz/core/fees-and-rebates"
+    },
+    {
+      "label": "Extended points cap (airdropalert)",
+      "url": "https://airdropalert.com/airdrops/extended-exchange-points-program/"
+    },
+    {
+      "label": "Lighter LIT airdrop (beincrypto)",
+      "url": "https://beincrypto.com/lighter-launches-lit-token-defi-infrastructure/"
+    },
+    {
+      "label": "Paradex DIME TGE (decrypt)",
+      "url": "https://decrypt.co/356482/paradex-confirms-dime-tge-timeline-and-expands-airdrop-allocation-following-xp-season-2-conclusion"
+    },
+    {
+      "label": "Ondo Perps points (odaily)",
+      "url": "https://www.odaily.news/en/newsflash/503094"
+    },
+    {
+      "label": "Whales Market: points OTC",
+      "url": "https://www.gate.com/learn/articles/whales-market-points-otc-marketplace/2399"
+    },
+    {
+      "label": "Pacifica airdrop guide (MEXC)",
+      "url": "https://blog.mexc.com/pacifica-airdrop-guide-2026-how-to-farm-points-on-solanas-1-perp-dex-before-the-tge/"
+    },
+    {
+      "label": "Nado rewards API (поинты по эпохам)",
+      "url": "https://docs.nado.xyz/developer-resources/api/endpoints"
+    }
   ]
 }

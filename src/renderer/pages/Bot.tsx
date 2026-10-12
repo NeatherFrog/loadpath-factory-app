@@ -4,8 +4,9 @@ import { api, usd } from '../api';
 import { Stat, stateLabel } from './Overview';
 
 const VENUE_LABEL: Record<BotVenueId, string> = { nado: 'Nado', hyperliquid: 'Hyperliquid' };
-// Taker fees at the entry tier, used for the cost estimate only.
+// Entry-tier fees, used for the cost estimate only.
 const TAKER_BPS: Record<BotVenueId, number> = { nado: 3.5, hyperliquid: 4.5 };
+const MAKER_BPS: Record<BotVenueId, number> = { nado: 1, hyperliquid: 1.5 };
 
 export function Bot({ status }: { status: BotStatus | null }) {
   const [cfg, setCfg] = useState<BotConfig>(DEFAULT_BOT_CONFIG);
@@ -62,7 +63,10 @@ export function Bot({ status }: { status: BotStatus | null }) {
   const cycleMin = (cfg.holdMinMinutes + cfg.holdMaxMinutes) / 2 + (cfg.pauseMinMinutes + cfg.pauseMaxMinutes) / 2 + 0.3;
   const cyclesPerDay = 1440 / Math.max(cycleMin, 0.5);
   const farmVolPerDay = cyclesPerDay * avgNotional * 2; // open + close on leg A
-  const costPerCycle = avgNotional * 2 * ((TAKER_BPS[cfg.legA] + TAKER_BPS[cfg.legB]) / 10_000) + avgNotional * 2 * (cfg.maxEntrySpreadBps / 2 / 10_000);
+  // Maker on leg A: no spread crossed there, only maker fee; leg B always pays taker + half its spread.
+  const legABps = cfg.makerLegA ? MAKER_BPS[cfg.legA] : TAKER_BPS[cfg.legA] + cfg.maxEntrySpreadBps / 4;
+  const legBBps = TAKER_BPS[cfg.legB] + cfg.maxEntrySpreadBps / 4;
+  const costPerCycle = avgNotional * 2 * ((legABps + legBBps) / 10_000);
   const costPerDay = cyclesPerDay * costPerCycle;
   const s = status?.stats;
 
@@ -124,6 +128,13 @@ export function Bot({ status }: { status: BotStatus | null }) {
             <Num label="Допуск дельты, $" v={cfg.deltaToleranceUsd} on={(v) => set('deltaToleranceUsd', v)} />
             <Num label="Дневной лимит убытка, $" v={cfg.maxDailyLossUsd} on={(v) => set('maxDailyLossUsd', v)} />
             <Num label="Дневная цель объёма, $ (0 = ∞)" v={cfg.dailyVolumeTargetUsd} on={(v) => set('dailyVolumeTargetUsd', v)} />
+            <label className="wide">Ордера на ноге A
+              <div className="seg">
+                <button className={cfg.makerLegA ? 'on' : ''} onClick={() => set('makerLegA', true)}>Мейкер (post-only, дешевле)</button>
+                <button className={!cfg.makerLegA ? 'on' : ''} onClick={() => set('makerLegA', false)}>Тейкер (быстрее)</button>
+              </div>
+            </label>
+            {cfg.makerLegA && <Num label="Ждать исполнения мейкера, сек" v={cfg.makerWaitSec} on={(v) => set('makerWaitSec', v)} />}
             <label className="wide">Направление
               <div className="seg">
                 <button className={cfg.direction === 'funding' ? 'on' : ''} onClick={() => set('direction', 'funding')}>По фандингу (лонг где дешевле)</button>
@@ -133,7 +144,8 @@ export function Bot({ status }: { status: BotStatus | null }) {
           </div>
           <div className="estimate">
             <div>≈ <b>{Math.round(cyclesPerDay)}</b> циклов/день · объём на {VENUE_LABEL[cfg.legA]} ≈ <b>{usd(farmVolPerDay)}</b>/день</div>
-            <div>Оценка затрат ≈ <b>{usd(costPerDay)}</b>/день (тейкер {TAKER_BPS[cfg.legA]}+{TAKER_BPS[cfg.legB]} bps + половина спреда), т.е. ≈ {usd((costPerCycle / (avgNotional * 2)) * 1e6)} на $1M объёма ноги A</div>
+            <div>Оценка затрат ≈ <b>{usd(costPerDay)}</b>/день (нога A {legABps.toFixed(1)} bps + нога B {legBBps.toFixed(1)} bps), т.е. ≈ {usd((costPerCycle / (avgNotional * 2)) * 1e6)} на $1M объёма ноги A</div>
+            {cfg.makerLegA && <div className="muted small">В мейкер-режиме ордер ждёт исполнения, поэтому циклов будет меньше расчётного, зато каждый в ~2–3 раза дешевле.</div>}
           </div>
           <div className="actions">
             <button className="btn" disabled={busy || saved} onClick={save}>Сохранить</button>

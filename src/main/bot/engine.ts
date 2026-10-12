@@ -24,6 +24,8 @@ export interface EngineDeps {
 const HEDGE_RETRIES = 4;
 const CHECK_EVERY_MS = 30_000;
 const SKIP_WAIT_MS = 15_000;
+const MAKER_REQUOTES = 3;
+const MAKER_POLL_MS = 1500;
 
 export function emptyStats(day = utcDay()): BotStats {
   return {
@@ -318,24 +320,46 @@ export class DeltaNeutralEngine {
       this.log('trade', `${venue.label} ${signedQty > 0 ? 'BUY' : 'SELL'} ${+fill.filledSize.toPrecision(8)} ${coin} @ ${fill.avgPx} (fee $${fill.feeUsd.toFixed(3)})`);
     };
 
-    // Leg A (farm venue) first, then hedge exactly what was filled on leg B.
-    const fillA = await this.a.ioc(coin, dir * size, cfg.slippageBps);
-    track(this.a, dir * fillA.filledSize, fillA);
-    if (fillA.filledSize === 0) {
-      this.log('warn', `${this.a.label}: IOC не исполнился, пропускаю цикл`);
-      this.cycle.phase = 'failed';
-      return 'skipped';
+    const useMaker = cfg.makerLegA && !!this.a.postOnly && !!this.a.cancel;
+    let filledA = 0;
+    let hedged = 0;
+    let entryPx = 0;
+    if (useMaker) {
+      // Leg A rests post-only at the top of its book; every fill is hedged on B right away.
+      this.message = `Мейкер-ордер ${coin} на ${this.a.label}…`;
+      this.emit();
+      filledA = await this.makerFill(this.a, coin, dir * size, false, async (delta, px) => {
+        entryPx = px;
+        hedged += await this.fillWithRetries(this.b, coin, -dir * delta, false, track);
+      }, track);
+      if (filledA === 0) {
+        this.log('info', `${coin}: мейкер-ордер не исполнился за ${cfg.makerWaitSec * MAKER_REQUOTES} c, пропускаю цикл`);
+        this.cycle.phase = 'failed';
+        return 'skipped';
+      }
+    } else {
+      // Leg A (farm venue) first, then hedge exactly what was filled on leg B.
+      const fillA = await this.a.ioc(coin, dir * size, cfg.slippageBps);
+      track(this.a, dir * fillA.filledSize, fillA);
+      filledA = fillA.filledSize;
+      entryPx = fillA.avgPx;
+      if (filledA === 0) {
+        this.log('warn', `${this.a.label}: IOC не исполнился, пропускаю цикл`);
+        this.cycle.phase = 'failed';
+        return 'skipped';
+      }
+      hedged = await this.fillWithRetries(this.b, coin, -dir * filledA, false, track);
     }
-    const hedged = await this.fillWithRetries(this.b, coin, -dir * fillA.filledSize, false, track);
-    const unhedged = fillA.filledSize - hedged;
+    const unhedged = filledA - hedged;
     if (unhedged >= specA.sizeStep) {
-      this.log('warn', `Захеджировано ${hedged} из ${fillA.filledSize}, откатываю остаток на ${this.a.label}`);
+      this.log('warn', `Захеджировано ${hedged} из ${filledA}, откатываю остаток на ${this.a.label}`);
       const posA = await this.a.position(coin);
       const safeReduce = Math.sign(posA) === dir && Math.abs(posA) >= unhedged;
       await this.fillWithRetries(this.a, coin, -dir * unhedged, safeReduce, track);
     }
+    this.cycle.notionalUsd = hedged * midA;
     this.cycle.legs = [
-      { venue: this.a.id, coin, size: dir * hedged, entryPx: fillA.avgPx },
+      { venue: this.a.id, coin, size: dir * hedged, entryPx },
       { venue: this.b.id, coin, size: -dir * hedged, entryPx: midB },
     ];
     if (hedged === 0) {
@@ -357,6 +381,17 @@ export class DeltaNeutralEngine {
     this.cycle.phase = 'closing';
     this.message = `Закрываю ${coin}`;
     this.emit();
+    if (useMaker && !this.stopRequested) {
+      // Close leg A as maker too; mirror each fill on B. Whatever is left is closed as taker below.
+      const expA = await this.own(this.a, coin);
+      const posA = await this.a.position(coin);
+      const reduceOnly = Math.sign(posA) === Math.sign(expA) && Math.abs(expA) <= Math.abs(posA);
+      await this.makerFill(this.a, coin, -expA, reduceOnly, async (delta) => {
+        const posB = await this.b.position(coin);
+        const closeB = Math.sign(expA) * delta;
+        await this.fillWithRetries(this.b, coin, closeB, Math.sign(posB) === -Math.sign(closeB), track);
+      }, track);
+    }
     await this.closeOwn(this.a, coin, track);
     await this.closeOwn(this.b, coin, track);
 
@@ -366,6 +401,53 @@ export class DeltaNeutralEngine {
     this.stats.totalRealizedPnlUsd += cash;
     this.log('info', `Цикл #${this.cycle.id} ${coin} закрыт, результат $${cash.toFixed(3)} (комиссии + спред)`);
     return 'done';
+  }
+
+  /**
+   * Works `target` (signed) on `venue` with post-only orders at the top of the book, re-quoting up to
+   * MAKER_REQUOTES times. `onFill(delta, px)` is called as soon as each new fill is seen, so the
+   * other leg can be hedged immediately. Returns the absolute filled size.
+   */
+  private async makerFill(
+    venue: Venue,
+    coin: string,
+    target: number,
+    reduceOnly: boolean,
+    onFill: (delta: number, px: number) => Promise<void>,
+    track: (v: Venue, q: number, f: Fill) => void,
+  ): Promise<number> {
+    const spec = venue.spec(coin);
+    const sign = Math.sign(target);
+    const want = Math.abs(target);
+    const start = await venue.position(coin);
+    let reported = 0;
+
+    const report = async (px: number) => {
+      const pos = await venue.position(coin);
+      const filled = Math.max(0, Math.min(want, sign * (pos - start)));
+      const delta = Number((filled - reported).toFixed(10));
+      if (delta >= spec.sizeStep / 2) {
+        reported = filled;
+        track(venue, sign * delta, { filledSize: delta, avgPx: px, feeUsd: delta * px * (spec.makerFeeBps / 10_000) });
+        await onFill(delta, px);
+      }
+    };
+
+    for (let q = 0; q < MAKER_REQUOTES && want - reported >= spec.sizeStep && !this.stopRequested; q++) {
+      const book = await venue.book(coin);
+      const px = sign > 0 ? book.bid : book.ask;
+      const id = await venue.postOnly!(coin, sign * (want - reported), px, reduceOnly);
+      if (!id) continue; // book moved and the order would have crossed: re-quote
+      const deadline = this.now() + this.config.makerWaitSec * 1000;
+      while (this.now() < deadline && !this.stopRequested) {
+        await this.sleep(MAKER_POLL_MS, () => this.stopRequested);
+        await report(px);
+        if (want - reported < spec.sizeStep) break;
+      }
+      await venue.cancel!(coin, id);
+      await report(px); // fills that landed between the last poll and the cancel
+    }
+    return reported;
   }
 
   private recordFill(venue: BotVenueId, fill: Fill) {
