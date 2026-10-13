@@ -69,6 +69,7 @@ export class DeltaNeutralEngine {
    * The bot only ever manages position - baseline, so it never touches what isn't its own.
    */
   private baseline = new Map<string, number>();
+  private holdCash = 0;
   private sleep: NonNullable<EngineDeps['sleep']>;
   private random: () => number;
   private now: () => number;
@@ -518,9 +519,17 @@ export class DeltaNeutralEngine {
     await this.checkDelta(coin, this.holdTrack(coin));
   }
 
+  /** Cash flow of hold trades since the last call (sells − buys − fees); a round trip's cost is −cash. */
+  takeHoldCash(): number {
+    const c = this.holdCash;
+    this.holdCash = 0;
+    return c;
+  }
+
   private holdTrack(coin: string) {
     return (venue: Venue, signedQty: number, fill: Fill) => {
       if (fill.filledSize <= 0) return;
+      this.holdCash += (signedQty > 0 ? -1 : 1) * fill.filledSize * fill.avgPx - fill.feeUsd;
       this.recordFill(venue.id, fill);
       this.stats.totalRealizedPnlUsd -= fill.feeUsd;
       this.stats.realizedPnlTodayUsd -= fill.feeUsd;

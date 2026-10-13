@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { AppInfo, UpdateStatus, VenueCredentialsView } from '../../shared/types';
 import { api } from '../api';
 
+export const ENTROPY_URL = 'https://entropy.io/?r=exalt0x';
+
 export function Settings({ update, info }: { update: UpdateStatus; info: AppInfo | null }) {
   const [creds, setCreds] = useState<VenueCredentialsView | null>(null);
   const [nadoAddr, setNadoAddr] = useState('');
@@ -22,7 +24,7 @@ export function Settings({ update, info }: { update: UpdateStatus; info: AppInfo
 
   const setMode = async (m: 'paper' | 'live') => {
     setModeMsg('');
-    if (m === 'live' && !window.confirm('Включить настоящий режим? Сделки на Nado будут идти реальными деньгами.')) return;
+    if (m === 'live' && !window.confirm('Включить настоящий режим? Автопилот будет торговать реальными деньгами.')) return;
     try {
       const c = await api().getBotConfig();
       const saved = await api().setBotConfig({ ...c, mode: m });
@@ -73,39 +75,38 @@ export function Settings({ update, info }: { update: UpdateStatus; info: AppInfo
         {modeMsg && <p className="small bad">{modeMsg}</p>}
       </div>
 
-      <div className="grid cols-2 align-start">
-        <div className="card">
-          <h3>Nado — нужна для зеркальных сделок</h3>
-          <ol className="small steps">
-            <li>Внеси USDT0 на <a onClick={() => void api().openExternal('https://app.nado.xyz')}>app.nado.xyz</a> (минимум $5, чтобы создался субаккаунт).</li>
-            <li>Включи <b>1-Click Trading</b> или создай <b>linked signer</b> по <a onClick={() => void api().openExternal('https://docs.nado.xyz/developer-resources/get-started/linked-signers')}>инструкции</a>: это отдельный ключ, который можно отозвать.</li>
-            <li>Вставь адрес основного кошелька и приватный ключ linked signer'а.</li>
-          </ol>
-          <div className="form">
-            <label className="wide">Адрес кошелька (владелец субаккаунта)<input value={nadoAddr} onChange={(e) => setNadoAddr(e.target.value)} placeholder="0x…" /></label>
-            <label>Субаккаунт<input value={nadoSub} onChange={(e) => setNadoSub(e.target.value)} /></label>
-            <label>Приватный ключ {creds?.nado.hasKey && <span className="ok">✓ сохранён</span>}
-              <input type="password" value={nadoKey} onChange={(e) => setNadoKey(e.target.value)} placeholder={creds?.nado.hasKey ? 'оставь пустым, чтобы не менять' : '0x…'} />
-            </label>
-          </div>
+      <div className="card">
+        <h3>Hyperliquid — для автопилота Entropy</h3>
+        <p className="small muted">Entropy работает поверх Hyperliquid, поэтому нужен только один счёт и один ключ.</p>
+        <ol className="small steps">
+          <li>Зайди на <a onClick={() => void api().openExternal(ENTROPY_URL)}>entropy.io</a> и подключи тот же кошелёк, что на Hyperliquid, чтобы аккаунт числился на Entropy.</li>
+          <li>Внеси USDC на <a onClick={() => void api().openExternal('https://app.hyperliquid.xyz')}>app.hyperliquid.xyz</a> (Deposit, сеть Arbitrum). Все деньги держи на этом одном счёте.</li>
+          <li>Создай <b>API Wallet</b>: <a onClick={() => void api().openExternal('https://app.hyperliquid.xyz/API')}>More → API</a>. Такой ключ может торговать, но не может выводить деньги.</li>
+          <li>Вставь сюда адрес основного кошелька и приватный ключ API-кошелька.</li>
+        </ol>
+        <div className="form">
+          <label className="wide">Адрес основного кошелька<input value={hlAddr} onChange={(e) => setHlAddr(e.target.value)} placeholder="0x…" /></label>
+          <label className="wide">Приватный ключ API-кошелька {creds?.hyperliquid.hasKey && <span className="ok">✓ сохранён</span>}
+            <input type="password" value={hlKey} onChange={(e) => setHlKey(e.target.value)} placeholder={creds?.hyperliquid.hasKey ? 'оставь пустым, чтобы не менять' : '0x…'} />
+          </label>
         </div>
-
       </div>
 
       <details className="card">
-        <summary><b>Другие биржи (нужны только авто-боту)</b></summary>
+        <summary><b>Nado и Lighter (нужны только для автопилота «Nado + Lighter»)</b></summary>
         <div className="grid cols-2 align-start">
           <div className="card">
-            <h3>Hyperliquid (хедж)</h3>
+            <h3>Nado</h3>
             <ol className="small steps">
-              <li>Внеси USDC на <a onClick={() => void api().openExternal('https://app.hyperliquid.xyz')}>app.hyperliquid.xyz</a>.</li>
-              <li>Создай <b>API Wallet</b> на странице <a onClick={() => void api().openExternal('https://app.hyperliquid.xyz/API')}>More → API</a>. Такой ключ может торговать, но не может выводить средства.</li>
-              <li>Вставь адрес основного аккаунта и приватный ключ API-кошелька.</li>
+              <li>Внеси USDT0 на <a onClick={() => void api().openExternal('https://app.nado.xyz')}>app.nado.xyz</a> (минимум $5, чтобы создался субаккаунт).</li>
+              <li>Включи <b>1-Click Trading</b> или создай <b>linked signer</b> по <a onClick={() => void api().openExternal('https://docs.nado.xyz/developer-resources/get-started/linked-signers')}>инструкции</a>: это отдельный ключ, который можно отозвать.</li>
+              <li>Вставь адрес основного кошелька и приватный ключ linked signer'а.</li>
             </ol>
             <div className="form">
-              <label className="wide">Адрес основного аккаунта<input value={hlAddr} onChange={(e) => setHlAddr(e.target.value)} placeholder="0x…" /></label>
-              <label className="wide">Приватный ключ API-кошелька {creds?.hyperliquid.hasKey && <span className="ok">✓ сохранён</span>}
-                <input type="password" value={hlKey} onChange={(e) => setHlKey(e.target.value)} placeholder={creds?.hyperliquid.hasKey ? 'оставь пустым, чтобы не менять' : '0x…'} />
+              <label className="wide">Адрес кошелька (владелец субаккаунта)<input value={nadoAddr} onChange={(e) => setNadoAddr(e.target.value)} placeholder="0x…" /></label>
+              <label>Субаккаунт<input value={nadoSub} onChange={(e) => setNadoSub(e.target.value)} /></label>
+              <label>Приватный ключ {creds?.nado.hasKey && <span className="ok">✓ сохранён</span>}
+                <input type="password" value={nadoKey} onChange={(e) => setNadoKey(e.target.value)} placeholder={creds?.nado.hasKey ? 'оставь пустым, чтобы не менять' : '0x…'} />
               </label>
             </div>
           </div>

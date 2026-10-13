@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { NadoPointsSummary, PointsEntry, ResearchFeed } from '../../shared/types';
+import type { AutopilotStatus, NadoPointsSummary, PointsEntry, ResearchFeed } from '../../shared/types';
 import { api, usd } from '../api';
 
 const VAR_PRICES = { otc: 20, market: 45 };
@@ -9,6 +9,7 @@ export function MyPoints({ feed }: { feed: ResearchFeed | null }) {
   const [varPoints, setVarPoints] = useState(0);
   const [nado, setNado] = useState<NadoPointsSummary | null>(null);
   const [nadoErr, setNadoErr] = useState('');
+  const [ap, setAp] = useState<AutopilotStatus | null>(null);
 
   useEffect(() => {
     void api().getPoints().then((p) => {
@@ -16,7 +17,10 @@ export function MyPoints({ feed }: { feed: ResearchFeed | null }) {
       setVarPoints(p.find((e) => e.projectId === 'variational')?.myPoints ?? 0);
     });
     void api().nadoPoints().then(setNado).catch((e) => setNadoErr(String(e)));
+    void api().autopilotStatus().then(setAp);
   }, []);
+
+  const entropyVolume = ap?.venues?.farm.startsWith('Entropy') ? ap.farmVolumeTotalUsd : 0;
 
   const saveVar = async (v: number) => {
     setVarPoints(v);
@@ -77,6 +81,15 @@ export function MyPoints({ feed }: { feed: ResearchFeed | null }) {
           )}
           <p className="small muted">Поинты Nado нельзя продать заранее: только ждать токен. Каждую неделю их раздают ~{nado ? Math.round(nado.lastWeekPool / 1000) : 340} тыс. на всех.</p>
         </div>
+      </div>
+
+      <div className="card">
+        <h2 className="hero-title">Entropy</h2>
+        <p>
+          Поинтов пока нет: Entropy их ещё не запускала. Автопилот копит историю торговли на случай аирдропа. Уже наторговано{' '}
+          <b>{usd(entropyVolume)}</b>.
+        </p>
+        <p className="small muted">Как только Entropy объявит поинты, я добавлю сюда их подсчёт.</p>
       </div>
 
       <div className="card">

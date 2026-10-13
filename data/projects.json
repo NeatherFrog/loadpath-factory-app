@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "updatedAt": "2026-10-12",
+  "version": 4,
+  "updatedAt": "2026-10-13",
   "marketNote": "Октябрь 2026: по открытому интересу лидирует Hyperliquid (~$12B OI), Lighter и Aster уже раздали токены. Из крупных перпов без токена с живой программой поинтов остались Variational (TGE в Q4 2026), Nado (Season 2), Extended (поинты почти закончились), Pacifica, StandX и Ondo Perps. Для фарма ботом важен торговый API, поэтому выбраны Variational как главный дроп и Nado как автоматизируемая нога.",
   "projects": [
     {
@@ -136,6 +136,54 @@
         "fdvBase": 300000000,
         "fdvBull": 600000000
       }
+    },
+    {
+      "id": "entropy",
+      "name": "Entropy",
+      "sector": "Перп-DEX (HIP-3 на Hyperliquid)",
+      "chain": "Hyperliquid",
+      "status": "farming",
+      "pick": "secondary",
+      "summary": "Биржа фьючерсов на акции до IPO (Anthropic, OpenAI) и обычные акции, работает поверх Hyperliquid (HIP-3, dex «io»). Запуск — 18.08.2026.",
+      "team": "Выходцы из Citadel Securities, Optiver, Polymarket и Millennium.",
+      "funding": "$14M seed, лид — Ribbit Capital. Заявлен стейк $40M в HYPE под HIP-3 (не подтверждён независимо).",
+      "traction": "13.10.2026: OI ~$62M (из них ANTH ~$42M), объём ~$87M за сутки, больше всего на SNDK.",
+      "points": "Официальной программы поинтов нет. В API аккаунта виден параметр pointsMultiplier, лидерборд «скоро». В блокчейне видно десятки аккаунтов по ~$100, которые держат ту же зеркальную связку Entropy/trade.xyz, то есть рынок ждёт аирдроп.",
+      "token": "Токена нет, аирдроп не объявлен.",
+      "tgeEstimate": "не объявлен",
+      "fees": "Growth mode: 0.009% тейкер / 0.003% мейкер (в 10 раз дешевле обычного HIP-3), проверено по реальным сделкам.",
+      "api": "Обычный API Hyperliquid: один API-кошелёк, без вывода средств. Рынки isolated-only (на большинстве маржу нельзя забрать из открытой позиции).",
+      "risks": [
+        "Поинты и токен не подтверждены: вся ставка на будущий аирдроп",
+        "Разные оракулы на Entropy и trade.xyz: цены ног могут разойтись, особенно в выходные",
+        "Изолированная маржа: проигрывающую ногу может ликвидировать, если не докидывать залог (автопилот докидывает)",
+        "Закрыто для США, Великобритании, Канады и Панамы; VPN запрещён правилами"
+      ],
+      "verdict": "Лучший вариант для маленького депозита ($100–500): один счёт на Hyperliquid, почти нулевые комиссии, зеркальная связка с trade.xyz сама приносит фандинг. Автопилот v0.1.5 фармит именно её.",
+      "scores": {
+        "team": 8,
+        "funding": 8,
+        "traction": 6,
+        "tokenUpside": 7,
+        "pointsAccess": 9,
+        "automation": 9,
+        "farmCost": 9,
+        "risk": 5
+      },
+      "links": [
+        {
+          "label": "App",
+          "url": "https://entropy.io/?r=exalt0x"
+        },
+        {
+          "label": "X",
+          "url": "https://x.com/entropyIO"
+        },
+        {
+          "label": "Hyperliquid",
+          "url": "https://app.hyperliquid.xyz"
+        }
+      ]
     },
     {
       "id": "extended",
@@ -454,7 +502,7 @@
       "pointsPer1MVolume": 9.6,
       "pointsPer1MOiWeek": 86,
       "pointValue": 20,
-      "roundTripSpreadBps": 1.0
+      "roundTripSpreadBps": 1
     },
     "fees": {
       "nadoMaker": 1,

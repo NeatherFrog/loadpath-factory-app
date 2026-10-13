@@ -20,6 +20,19 @@ export interface Fill {
   feeUsd: number;
 }
 
+/** An isolated-margin position (each one is liquidated on its own, so margin must be watched). */
+export interface IsolatedLeg {
+  size: number; // signed base size
+  markPx: number;
+  liquidationPx: number | null;
+  marginUsd: number; // margin locked in the position, including unrealized PnL
+  positionValueUsd: number;
+  /** False for a cross-margin position (it draws on the shared balance by itself). */
+  isolated: boolean;
+  /** Margin can be taken out of the position (not on "strict isolated" markets). */
+  removable: boolean;
+}
+
 /** A trading venue as seen by the delta-neutral engine. Sizes are base units, side via sign. */
 export interface Venue {
   readonly id: BotVenueId;
@@ -45,4 +58,10 @@ export interface Venue {
    */
   postOnly?(coin: string, size: number, price: number, reduceOnly?: boolean): Promise<string | null>;
   cancel?(coin: string, orderId: string): Promise<void>;
+  /** Isolated-margin venues: state of the position on `coin` (null when flat). */
+  isolatedLeg?(coin: string): Promise<IsolatedLeg | null>;
+  /** Collateral not locked in any position. */
+  freeCollateralUsd?(): Promise<number>;
+  /** Adds (positive) or removes (negative) isolated margin of the position on `coin`. */
+  adjustIsolatedMargin?(coin: string, usd: number): Promise<void>;
 }

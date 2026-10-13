@@ -1,5 +1,6 @@
 import type { AutopilotConfig, AutopilotEvent, AutopilotHold, AutopilotStatus } from '../../shared/types';
 import type { DeltaNeutralEngine } from './engine';
+import type { GuardResult } from './marginGuard';
 import type { Venue } from './venue';
 import { commonSize, utcDay } from './math';
 
@@ -25,6 +26,15 @@ export interface AutopilotDeps {
   quotes: () => Promise<FundingQuote[]>;
   /** Called each tick with how much the churn engine may lose today (0 = stop churning). */
   churnBudget?: (usd: number, excludeCoin: string | null) => Promise<void> | void;
+  /**
+   * Farm volume by "rolling" the held position (close a slice and reopen it) instead of a separate
+   * churn engine: no extra margin is needed, which matters for a small account.
+   */
+  rollVolume?: boolean;
+  /** Both venues are the same account (Entropy + trade.xyz on Hyperliquid): margin is split in two. */
+  sharedAccount?: boolean;
+  /** Isolated-margin protection, run every tick for the held coin. */
+  guard?: (coin: string) => Promise<GuardResult>;
   save?: (s: AutopilotStatus) => void;
   onChange?: (s: AutopilotStatus) => void;
   now?: () => number;
@@ -36,6 +46,9 @@ const YEAR_MS = 365 * 86_400_000;
 const TICK_MS = 60_000;
 const NEG_TICKS_TO_CLOSE = 3;
 const MAX_EVENTS = 60;
+/** Rough cost of one roll (close + reopen both legs) as a fraction of the rolled size. */
+const ROLL_COST_ESTIMATE = 0.0006;
+const MIN_ROLL_USD = 20;
 
 export function bestOpportunities(quotes: FundingQuote[]): Opportunity[] {
   return quotes
@@ -60,6 +73,10 @@ export function emptyAutopilotStatus(): AutopilotStatus {
     day: utcDay(),
     equity: null,
     events: [],
+    farmVolumeTodayUsd: 0,
+    farmVolumeTotalUsd: 0,
+    rollSpentTodayUsd: 0,
+    venues: null,
   };
 }
 
@@ -77,6 +94,8 @@ export class Autopilot {
   private negTicks = 0;
   private now: () => number;
   private sleep: NonNullable<AutopilotDeps['sleep']>;
+  /** Farm-venue volume of the holder engine already counted in the status. */
+  private countedVolume = 0;
 
   constructor(
     private cfg: AutopilotConfig,
@@ -89,7 +108,7 @@ export class Autopilot {
         const end = Date.now() + ms;
         while (Date.now() < end && !wake()) await new Promise((r) => setTimeout(r, Math.min(500, end - Date.now())));
       });
-    this.s = { ...emptyAutopilotStatus(), ...d.initial, running: false };
+    this.s = { ...emptyAutopilotStatus(), ...d.initial, running: false, venues: { farm: d.nado.label, hedge: d.hedge.label } };
     if (this.s.hold) d.holder.restoreHoldBaseline(this.s.hold.coin, { a: this.s.hold.baseA, b: this.s.hold.baseB });
   }
 
@@ -158,6 +177,8 @@ export class Autopilot {
     if (this.s.day !== utcDay(now)) {
       this.s.day = utcDay(now);
       this.s.fundingTodayUsd = 0;
+      this.s.farmVolumeTodayUsd = 0;
+      this.s.rollSpentTodayUsd = 0;
     }
 
     const quotes = (await this.d.quotes()).filter((q) => this.d.nado.hasMarket(q.coin) && this.d.hedge.hasMarket(q.coin));
@@ -165,8 +186,10 @@ export class Autopilot {
     const best = opps[0];
     const [eqA, eqB] = await Promise.all([this.d.nado.equityUsd(), this.d.hedge.equityUsd()]);
     this.s.equity = eqA !== null && eqB !== null ? { nado: eqA, hedge: eqB } : null;
-    const margin = Math.min(eqA ?? 0, eqB ?? 0);
-    let target = margin * this.cfg.leverage * 0.9;
+    // One shared account holds both legs: half of it backs each leg, and a fifth is kept free to
+    // top up isolated margin when the price runs against one leg.
+    const margin = this.d.sharedAccount ? (eqA ?? 0) / 2 : Math.min(eqA ?? 0, eqB ?? 0);
+    let target = margin * this.cfg.leverage * (this.d.sharedAccount ? 0.8 : 0.9);
     if (this.cfg.maxNotionalUsd > 0) target = Math.min(target, this.cfg.maxNotionalUsd);
 
     const hold = this.s.hold;
@@ -203,10 +226,12 @@ export class Autopilot {
         ) {
           await this.closeHold(`Нашёл выгоднее: ${best.coin} (${pct(best.edgeApr)} в год против ${pct(this.s.incomeApr)}) — переключаюсь`);
         } else if (price > 0 && target > 0) {
-          await this.resize(hold, price, target);
+          const changed = await this.resize(hold, price, target);
           await this.d.holder.holdAlign(hold.coin);
+          if (!changed && this.d.rollVolume) await this.roll(hold, price);
         }
       }
+      if (this.s.hold && this.d.guard) await this.protect(this.s.hold, price);
     }
 
     if (!this.s.hold && !this.stopRequested) {
@@ -215,21 +240,28 @@ export class Autopilot {
       } else {
         this.s.notionalUsd = 0;
         this.s.incomeApr = 0;
-        this.emit(target < 20 ? 'Мало денег на биржах — пополни Nado и хедж-биржу' : 'Жду выгодную монету');
+        this.emit(
+          target < 20
+            ? this.d.sharedAccount
+              ? `Мало денег — пополни счёт на ${this.d.nado.label}`
+              : `Мало денег на биржах — пополни ${this.d.nado.label} и ${this.d.hedge.label}`
+            : 'Жду выгодную монету',
+        );
       }
     }
 
     // Spend funding earned today (+ the user's daily budget) on extra Nado volume for points.
-    if (this.d.churnBudget) {
+    if (this.d.churnBudget && !this.d.rollVolume) {
       const budget = this.cfg.churn ? this.cfg.dailyBudgetUsd + Math.max(0, this.s.fundingTodayUsd) : 0;
       await this.d.churnBudget(budget, this.s.hold?.coin ?? null);
     }
 
+    this.countVolume();
     this.lastTick = now;
     if (this.s.hold) {
       const side = this.s.hold.nadoSide === 'long' ? 'LONG' : 'SHORT';
       const other = this.s.hold.nadoSide === 'long' ? 'SHORT' : 'LONG';
-      this.emit(`Держу ${this.s.hold.coin}: Nado ${side} / ${this.d.hedge.label} ${other}`);
+      this.emit(`Держу ${this.s.hold.coin}: ${this.d.nado.label} ${side} / ${this.d.hedge.label} ${other}`);
     } else {
       this.emit();
     }
@@ -247,7 +279,7 @@ export class Autopilot {
     if (size <= 0) return;
     const hedged = await this.d.holder.holdOpen(o.coin, dir * size);
     if (hedged <= 0) {
-      this.event(`${o.coin}: ордер на Nado не исполнился, попробую позже`, 'warn');
+      this.event(`${o.coin}: ордер на ${this.d.nado.label} не исполнился, попробую позже`, 'warn');
       return;
     }
     const base = this.d.holder.holdBaseline(o.coin) ?? { a: 0, b: 0 };
@@ -256,32 +288,82 @@ export class Autopilot {
     this.s.notionalUsd = hedged * o.price;
     this.s.incomeApr = o.edgeApr;
     this.event(
-      `Открыл ${o.coin} на ${usd(hedged * o.price)}: Nado ${o.nadoSide === 'long' ? 'LONG' : 'SHORT'}, ${this.d.hedge.label} ${o.nadoSide === 'long' ? 'SHORT' : 'LONG'}. Биржи платят ≈ ${pct(o.edgeApr)} в год`,
+      `Открыл ${o.coin} на ${usd(hedged * o.price)}: ${this.d.nado.label} ${o.nadoSide === 'long' ? 'LONG' : 'SHORT'}, ${this.d.hedge.label} ${o.nadoSide === 'long' ? 'SHORT' : 'LONG'}. Биржи платят ≈ ${pct(o.edgeApr)} в год`,
       'trade',
     );
   }
 
-  private async resize(hold: AutopilotHold, price: number, target: number) {
+  /** Grows or shrinks the position toward `target`. Returns true when it traded. */
+  private async resize(hold: AutopilotHold, price: number, target: number): Promise<boolean> {
     const cur = this.s.notionalUsd;
     const dir = hold.nadoSide === 'long' ? 1 : -1;
     if (cur < target * 0.8) {
       const add = Math.min(this.cfg.sliceUsd, target - cur);
-      if (add < 20) return;
+      if (add < 20) return false;
       const size = this.size(hold.coin, add, price);
-      if (size <= 0) return;
+      if (size <= 0) return false;
       const hedged = await this.d.holder.holdOpen(hold.coin, dir * size);
       if (hedged > 0) {
         this.s.notionalUsd += hedged * price;
         this.event(`Добавил ${usd(hedged * price)} к ${hold.coin} (всего ${usd(this.s.notionalUsd)})`, 'trade');
       }
+      return true;
     } else if (cur > target * 1.25) {
       // Margin shrank (losses on one leg or a withdrawal): reduce to stay safe from liquidation.
       const cut = Math.min(this.cfg.sliceUsd, cur - target);
       const size = this.size(hold.coin, cut, price);
-      if (size <= 0) return;
+      if (size <= 0) return false;
       await this.d.holder.holdClose(hold.coin, size);
       this.s.notionalUsd -= cut;
       this.event(`Уменьшил ${hold.coin} на ${usd(cut)}: денег на одной из бирж стало меньше`, 'warn');
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Volume for points without extra margin: close a slice of the held position on both venues and
+   * open it again right away. Spends at most the day's budget (funding earned + the user's budget).
+   */
+  private async roll(hold: AutopilotHold, price: number) {
+    if (!this.cfg.churn) return;
+    const budget = this.cfg.dailyBudgetUsd + Math.max(0, this.s.fundingTodayUsd);
+    const left = budget - this.s.rollSpentTodayUsd;
+    const slice = Math.min(this.cfg.sliceUsd, this.s.notionalUsd, left / ROLL_COST_ESTIMATE);
+    if (slice < MIN_ROLL_USD) return;
+    const size = this.size(hold.coin, slice, price);
+    if (size <= 0) return;
+    const dir = hold.nadoSide === 'long' ? 1 : -1;
+    this.d.holder.takeHoldCash();
+    await this.d.holder.holdClose(hold.coin, size);
+    const reopened = await this.d.holder.holdOpen(hold.coin, dir * size);
+    const cost = Math.max(0, -this.d.holder.takeHoldCash());
+    this.s.rollSpentTodayUsd += cost;
+    if (reopened < size) this.s.notionalUsd -= (size - reopened) * price; // resize() tops it up later
+    this.event(`Объём: перекатил ${usd(size * price)} ${hold.coin} на обеих биржах, стоило $${cost.toFixed(3)}`, 'trade');
+  }
+
+  /** Keeps both isolated legs away from liquidation; cuts the position when that is not possible. */
+  private async protect(hold: AutopilotHold, price: number) {
+    const r = await this.d.guard!(hold.coin);
+    for (const e of r.events) this.event(e, 'warn');
+    if (r.danger && price > 0) {
+      const size = this.size(hold.coin, this.s.notionalUsd / 2, price);
+      if (size <= 0) return;
+      await this.d.holder.holdClose(hold.coin, size);
+      this.s.notionalUsd /= 2;
+      this.event(`${hold.coin}: близко к ликвидации и нечем добавить маржу — уменьшил позицию вдвое`, 'error');
+    }
+  }
+
+  /** Adds new farm-venue volume of the held position to the counters shown to the user. */
+  private countVolume() {
+    const v = this.d.holder.status().stats.perVenue[this.d.nado.id]?.volumeUsd ?? 0;
+    const delta = v - this.countedVolume;
+    this.countedVolume = v;
+    if (delta > 0) {
+      this.s.farmVolumeTodayUsd += delta;
+      this.s.farmVolumeTotalUsd += delta;
     }
   }
 

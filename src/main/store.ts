@@ -32,7 +32,8 @@ interface StoreData {
   /** The user turned the autopilot on (and did not turn it off): resume it on app start. */
   autopilotEnabled?: boolean;
   /** Kept per mode so a practice position is never "restored" into live trading. */
-  autopilotState?: Partial<Record<BotConfig['mode'], AutopilotStatus>>;
+  /** Keyed by mode ("paper"/"live") for the Nado strategy and "entropy:<mode>" for Entropy. */
+  autopilotState?: Record<string, AutopilotStatus | undefined>;
 }
 
 const DEFAULTS: StoreData = {
@@ -74,6 +75,13 @@ export class Store {
       c.makerRequotes = 6;
       if (c.coins.join(',') === 'BTC,ETH,SOL') c.coins = ['BTC', 'ETH'];
       this.data.configRev = 3;
+      this.write();
+    }
+    if ((this.data.configRev ?? 1) < 4) {
+      // v0.1.5: the default autopilot farms Entropy. Keep Nado only for a real (live) Nado position.
+      const holding = !!this.data.autopilotState?.live?.hold;
+      if (holding) this.data.autopilotConfig = { ...DEFAULT_AUTOPILOT_CONFIG, ...this.data.autopilotConfig, strategy: 'nado' };
+      this.data.configRev = 4;
       this.write();
     }
   }
@@ -137,11 +145,11 @@ export class Store {
     this.data.autopilotEnabled = on;
     this.write();
   }
-  autopilotState(mode: BotConfig['mode']): AutopilotStatus | undefined {
-    return this.data.autopilotState?.[mode];
+  autopilotState(key: string): AutopilotStatus | undefined {
+    return this.data.autopilotState?.[key];
   }
-  saveAutopilotState(mode: BotConfig['mode'], s: AutopilotStatus) {
-    this.data.autopilotState = { ...this.data.autopilotState, [mode]: s };
+  saveAutopilotState(key: string, s: AutopilotStatus) {
+    this.data.autopilotState = { ...this.data.autopilotState, [key]: s };
     this.write();
   }
 

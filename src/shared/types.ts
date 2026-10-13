@@ -99,7 +99,8 @@ export interface MarketSnapshot {
 
 // ---- Bot ----
 
-export type BotVenueId = 'nado' | 'hyperliquid' | 'lighter';
+/** 'entropy' and 'tradexyz' are HIP-3 dexes on Hyperliquid ("io" and "xyz"), traded with the Hyperliquid key. */
+export type BotVenueId = 'nado' | 'hyperliquid' | 'lighter' | 'entropy' | 'tradexyz';
 export type BotMode = 'paper' | 'live';
 
 export interface BotConfig {
@@ -262,7 +263,15 @@ export interface NadoPointsSummary {
 
 // ---- Autopilot ----
 
+/**
+ * Where the autopilot farms:
+ * - 'entropy': Entropy (short where it pays) vs trade.xyz, both on one Hyperliquid account — works with a small balance.
+ * - 'nado': Nado vs Lighter (two exchanges, money on each).
+ */
+export type AutopilotStrategy = 'entropy' | 'nado';
+
 export interface AutopilotConfig {
+  strategy: AutopilotStrategy;
   /** Position size = min(margin on both venues) × leverage × 0.9. */
   leverage: number;
   /** Extra USD per day the user allows to spend on Nado volume for points (on top of funding earned). */
@@ -281,6 +290,7 @@ export interface AutopilotConfig {
 }
 
 export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
+  strategy: 'entropy',
   leverage: 2,
   dailyBudgetUsd: 0,
   churn: true,
@@ -318,4 +328,10 @@ export interface AutopilotStatus {
   day: string;
   equity: { nado: number; hedge: number } | null;
   events: AutopilotEvent[];
+  /** Volume of the autopilot's own trades on the farm venue (Nado or Entropy). */
+  farmVolumeTodayUsd: number;
+  farmVolumeTotalUsd: number;
+  /** Spent today on rolling the position for volume. */
+  rollSpentTodayUsd: number;
+  venues: { farm: string; hedge: string } | null;
 }

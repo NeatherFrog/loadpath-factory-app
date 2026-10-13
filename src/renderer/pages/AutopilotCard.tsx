@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { AutopilotConfig, AutopilotStatus, BotStatus, VenueCredentialsView } from '../../shared/types';
+import type { AutopilotConfig, AutopilotStatus, AutopilotStrategy, BotStatus, VenueCredentialsView } from '../../shared/types';
 import { api, usd } from '../api';
 import type { Page } from '../App';
 
-const BUDGETS = [0, 2, 5, 10];
+const BUDGETS: Record<AutopilotStrategy, number[]> = { entropy: [0, 0.5, 1, 2], nado: [0, 2, 5, 10] };
 const NADO_POINTS_PER_1M = 160;
 
 export function AutopilotCard({ bot, go }: { bot: BotStatus | null; go: (p: Page) => void }) {
@@ -21,7 +21,11 @@ export function AutopilotCard({ bot, go }: { bot: BotStatus | null; go: (p: Page
   }, []);
 
   const live = bot?.mode === 'live';
-  const missingKeys = live && creds && (!creds.nado.hasKey || !creds.lighter.hasKey);
+  const strategy: AutopilotStrategy = cfg?.strategy ?? 'entropy';
+  const entropy = strategy === 'entropy';
+  const missingKeys = live && creds && (entropy ? !creds.hyperliquid.hasKey : !creds.nado.hasKey || !creds.lighter.hasKey);
+  const farm = s?.venues?.farm ?? (entropy ? 'Entropy' : 'Nado');
+  const hedgeName = s?.venues?.hedge ?? (entropy ? 'trade.xyz' : 'Lighter');
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -41,6 +45,14 @@ export function AutopilotCard({ bot, go }: { bot: BotStatus | null; go: (p: Page
     setCfg(await api().setAutopilotConfig({ ...cfg, dailyBudgetUsd: v }));
   };
 
+  const setStrategy = (v: AutopilotStrategy) =>
+    act(async () => {
+      if (!cfg || cfg.strategy === v) return;
+      const budgets = BUDGETS[v];
+      const dailyBudgetUsd = budgets.includes(cfg.dailyBudgetUsd) ? cfg.dailyBudgetUsd : 0;
+      setCfg(await api().setAutopilotConfig({ ...cfg, strategy: v, dailyBudgetUsd }));
+    });
+
   const running = !!s?.running;
   const hold = s?.hold;
   const perDay = s ? (s.notionalUsd * s.incomeApr) / 365 : 0;
@@ -53,16 +65,38 @@ export function AutopilotCard({ bot, go }: { bot: BotStatus | null; go: (p: Page
         <span className={`state-pill ${running ? 'running' : 'stopped'}`}>{running ? 'Работает' : 'Выключен'}</span>
       </div>
 
-      {!running && (
-        <p>
-          Сам держит зеркальную сделку на <b>Nado</b> и <b>Lighter</b> по монете, где биржи сейчас платят больше всего. Сам
-          открывает, докупает, переключается и закрывает. Всё, что заработал, тратит на объём на Nado, чтобы копились поинты.
-        </p>
+      {!running && cfg && (
+        <div>
+          <div className="muted small">Где фармить</div>
+          <div className="amount-row">
+            <button className={`chip-btn ${entropy ? 'on' : ''}`} disabled={busy} onClick={() => void setStrategy('entropy')}>
+              Entropy — хватит и $300
+            </button>
+            <button className={`chip-btn ${!entropy ? 'on' : ''}`} disabled={busy} onClick={() => void setStrategy('nado')}>
+              Nado + Lighter — от $1000
+            </button>
+          </div>
+        </div>
       )}
+
+      {!running &&
+        (entropy ? (
+          <p>
+            Держит зеркальную сделку на одну и ту же акцию: на <b>Entropy</b> в одну сторону, на <b>trade.xyz</b> в другую. Обе биржи
+            работают на Hyperliquid, поэтому нужен один счёт. Если цена растёт или падает, одна сделка зарабатывает столько же, сколько теряет
+            другая. Entropy доплачивает за свою сторону больше, и эта разница — твой доход. Заработанное и твой бюджет тратит на объём
+            на Entropy: поинтов там пока нет, но если объявят аирдроп, у тебя уже будет история торговли.
+          </p>
+        ) : (
+          <p>
+            Сам держит зеркальную сделку на <b>Nado</b> и <b>Lighter</b> по монете, где биржи сейчас платят больше всего. Сам
+            открывает, докупает, переключается и закрывает. Всё, что заработал, тратит на объём на Nado, чтобы копились поинты.
+          </p>
+        ))}
 
       {missingKeys && (
         <div className="banner error">
-          Для настоящей торговли подключи Nado и Lighter в <a onClick={() => go('settings')}>Настройках</a>.
+          Для настоящей торговли подключи {entropy ? 'Hyperliquid' : 'Nado и Lighter'} в <a onClick={() => go('settings')}>Настройках</a>.
         </div>
       )}
 
@@ -74,7 +108,7 @@ export function AutopilotCard({ bot, go }: { bot: BotStatus | null; go: (p: Page
               <>
                 <div className="ap-big">{hold.coin} на {usd(s!.notionalUsd)}</div>
                 <div className="small">
-                  Nado <b className={hold.nadoSide === 'long' ? 'good' : 'bad'}>{hold.nadoSide === 'long' ? 'LONG' : 'SHORT'}</b> · Lighter{' '}
+                  {farm} <b className={hold.nadoSide === 'long' ? 'good' : 'bad'}>{hold.nadoSide === 'long' ? 'LONG' : 'SHORT'}</b> · {hedgeName}{' '}
                   <b className={hold.nadoSide === 'long' ? 'bad' : 'good'}>{hold.nadoSide === 'long' ? 'SHORT' : 'LONG'}</b>
                 </div>
               </>
@@ -87,11 +121,21 @@ export function AutopilotCard({ bot, go }: { bot: BotStatus | null; go: (p: Page
             <div className={`ap-big ${perDay >= 0 ? 'good' : 'bad'}`}>{usd(perDay, 2)} в день</div>
             <div className="small muted">заработано сегодня {usd(s?.fundingTodayUsd ?? 0, 2)} · всего {usd(s?.fundingTotalUsd ?? 0, 2)}</div>
           </div>
-          <div className="ap-box">
-            <div className="muted small">Поинты Nado</div>
-            <div className="ap-big">≈ {((nadoVolume / 1e6) * NADO_POINTS_PER_1M).toFixed(1)}</div>
-            <div className="small muted">объём на Nado {usd(nadoVolume)}</div>
-          </div>
+          {entropy ? (
+            <div className="ap-box">
+              <div className="muted small">Наторговал на Entropy</div>
+              <div className="ap-big">{usd(s?.farmVolumeTotalUsd ?? 0)}</div>
+              <div className="small muted">
+                сегодня {usd(s?.farmVolumeTodayUsd ?? 0)} · потрачено на объём {usd(s?.rollSpentTodayUsd ?? 0, 2)}
+              </div>
+            </div>
+          ) : (
+            <div className="ap-box">
+              <div className="muted small">Поинты Nado</div>
+              <div className="ap-big">≈ {((nadoVolume / 1e6) * NADO_POINTS_PER_1M).toFixed(1)}</div>
+              <div className="small muted">объём на Nado {usd(nadoVolume)}</div>
+            </div>
+          )}
         </div>
       )}
 
@@ -99,7 +143,7 @@ export function AutopilotCard({ bot, go }: { bot: BotStatus | null; go: (p: Page
         <div>
           <div className="muted small">Сколько своих денег добавлять на поинты в день (кроме заработанного)</div>
           <div className="amount-row">
-            {BUDGETS.map((b) => (
+            {BUDGETS[strategy].map((b) => (
               <button key={b} className={`chip-btn ${cfg.dailyBudgetUsd === b ? 'on' : ''}`} onClick={() => void setBudget(b)}>
                 {b === 0 ? '$0 — только заработанное' : `$${b}`}
               </button>
@@ -130,12 +174,19 @@ export function AutopilotCard({ bot, go }: { bot: BotStatus | null; go: (p: Page
           </>
         )}
       </div>
-      {!running && (
-        <p className="muted small">
-          {live ? 'Торговля настоящими деньгами.' : 'Режим тренировки: на каждой бирже условно $1000, сделки не настоящие.'} Нужно держать деньги на
-          Nado и Lighter примерно поровну: размер сделки = меньший баланс × 2.
-        </p>
-      )}
+      {!running &&
+        (entropy ? (
+          <p className="muted small">
+            {live ? 'Торговля настоящими деньгами.' : 'Режим тренировки: условно $300 (по $150 на каждую сторону), сделки не настоящие.'} Размер
+            сделки = половина счёта × 2. Часть денег остаётся в запасе: если цена сильно уйдёт, автопилот докинет залог проигрывающей стороне,
+            чтобы её не ликвидировало.
+          </p>
+        ) : (
+          <p className="muted small">
+            {live ? 'Торговля настоящими деньгами.' : 'Режим тренировки: на каждой бирже условно $1000, сделки не настоящие.'} Нужно держать деньги на
+            Nado и Lighter примерно поровну: размер сделки = меньший баланс × 2.
+          </p>
+        ))}
       {err && <div className="banner error">{err}</div>}
 
       {s && s.events.length > 0 && (

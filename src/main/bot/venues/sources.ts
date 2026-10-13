@@ -1,7 +1,7 @@
 import type { MarketSpec } from '../venue';
 import type { PublicMarketSource } from './paper';
 import { fetchNadoBook, fetchNadoContracts, fetchNadoMarkets } from '../../data/nadoPublic';
-import { fetchHlBook, fetchHlMeta } from '../../data/hlPublic';
+import { fetchHlBook, fetchHlMeta, type HlAssetCtx } from '../../data/hlPublic';
 import { fetchLighterBook, fetchLighterFunding, fetchLighterMarkets } from '../../data/lighterPublic';
 
 const FUNDING_TTL = 60_000;
@@ -32,26 +32,41 @@ export function nadoPublicSource(): PublicMarketSource {
   };
 }
 
-export function hlPublicSource(): PublicMarketSource {
+/**
+ * Hyperliquid public data. `dex` selects a HIP-3 dex ("io" = Entropy, "xyz" = trade.xyz); its
+ * markets are exposed under plain coin names ("NBIS" for "io:NBIS") so both legs share one name.
+ */
+export function hlPublicSource(dex = ''): PublicMarketSource {
   let funding = new Map<string, number>();
   let fundingAt = 0;
+  const full = (coin: string) => hlCoin(dex, coin);
+  const refresh = (ctxs: HlAssetCtx[]) => {
+    funding = new Map(ctxs.map((c) => [plainCoin(c.coin), c.funding * 24 * 365]));
+    fundingAt = Date.now();
+  };
   return {
     async load() {
-      const { markets, ctxs } = await fetchHlMeta();
-      funding = new Map(ctxs.map((c) => [c.coin, c.funding * 24 * 365]));
-      fundingAt = Date.now();
-      return new Map<string, MarketSpec>([...markets].map(([coin, m]) => [coin, m.spec]));
+      const { markets, ctxs } = await fetchHlMeta(dex);
+      refresh(ctxs);
+      return new Map<string, MarketSpec>([...markets].map(([coin, m]) => [plainCoin(coin), m.spec]));
     },
-    book: (coin) => fetchHlBook(coin),
+    book: (coin) => fetchHlBook(full(coin)),
     async fundingApr(coin) {
-      if (Date.now() - fundingAt > FUNDING_TTL) {
-        const { ctxs } = await fetchHlMeta();
-        funding = new Map(ctxs.map((c) => [c.coin, c.funding * 24 * 365]));
-        fundingAt = Date.now();
-      }
+      if (Date.now() - fundingAt > FUNDING_TTL) refresh((await fetchHlMeta(dex)).ctxs);
       return funding.get(coin) ?? null;
     },
   };
+}
+
+/** "NBIS" on dex "io" → "io:NBIS"; main-dex coins are unchanged. */
+export function hlCoin(dex: string, coin: string) {
+  return dex ? `${dex}:${coin}` : coin;
+}
+
+/** "io:NBIS" → "NBIS". */
+export function plainCoin(name: string) {
+  const i = name.indexOf(':');
+  return i < 0 ? name : name.slice(i + 1);
 }
 
 export function lighterPublicSource(): PublicMarketSource {

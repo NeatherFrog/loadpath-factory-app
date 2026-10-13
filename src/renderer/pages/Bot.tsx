@@ -3,10 +3,10 @@ import { DEFAULT_BOT_CONFIG, type BotConfig, type BotLogEntry, type BotStatus, t
 import { api, usd } from '../api';
 import { Stat, stateLabel } from '../components';
 
-const VENUE_LABEL: Record<BotVenueId, string> = { nado: 'Nado', hyperliquid: 'Hyperliquid', lighter: 'Lighter' };
+const VENUE_LABEL: Record<BotVenueId, string> = { nado: 'Nado', hyperliquid: 'Hyperliquid', lighter: 'Lighter', entropy: 'Entropy', tradexyz: 'trade.xyz' };
 // Entry-tier fees, used for the cost estimate only.
-const TAKER_BPS: Record<BotVenueId, number> = { nado: 3.5, hyperliquid: 4.5, lighter: 0 };
-const MAKER_BPS: Record<BotVenueId, number> = { nado: 1, hyperliquid: 1.5, lighter: 0 };
+const TAKER_BPS: Record<BotVenueId, number> = { nado: 3.5, hyperliquid: 4.5, lighter: 0, entropy: 0.9, tradexyz: 0.9 };
+const MAKER_BPS: Record<BotVenueId, number> = { nado: 1, hyperliquid: 1.5, lighter: 0, entropy: 0.3, tradexyz: 0.3 };
 
 export function Bot({ status }: { status: BotStatus | null }) {
   const [cfg, setCfg] = useState<BotConfig>(DEFAULT_BOT_CONFIG);
